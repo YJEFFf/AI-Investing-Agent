@@ -1,0 +1,69 @@
+from strategy.agents.base_agent import BaseAgent, AgentOpinion
+
+
+class RiskManagerAgent(BaseAgent):
+    @property
+    def name(self) -> str:
+        return "리스크 관리자"
+
+    async def analyze(self, context: dict) -> AgentOpinion:
+        opinions: list[AgentOpinion] = context["opinions"]
+        open_positions: int = context.get("open_positions", 0)
+        daily_pnl_pct: float = context.get("daily_pnl_pct", 0.0)
+        drawdown_pct: float = context.get("drawdown_pct", 0.0)
+
+        risk_flags = []
+        all_flags = []
+        for op in opinions:
+            all_flags.extend(op.risk_flags)
+
+        # 포트폴리오 상태 체크
+        if open_positions >= 5:
+            risk_flags.append("max_positions_reached")
+        if daily_pnl_pct <= -0.03:
+            risk_flags.append("daily_loss_cap_hit")
+        if drawdown_pct >= 0.10:
+            risk_flags.append("max_drawdown_hit")
+
+        # 뉴스 위험 플래그 전파
+        critical_flags = {"earnings_tomorrow", "regulatory_risk", "accounting_issue", "delisting_risk"}
+        found_critical = critical_flags.intersection(set(all_flags))
+        risk_flags.extend(found_critical)
+
+        # 포지션 크기 권장
+        if risk_flags:
+            if any(f in risk_flags for f in ["max_positions_reached", "daily_loss_cap_hit", "max_drawdown_hit"]):
+                position_ratio = 0.0  # 진입 불가
+            else:
+                position_ratio = 0.5  # 위험 존재 → 절반
+        else:
+            position_ratio = 1.0  # 정상
+
+        # 위험도 레벨
+        if position_ratio == 0.0:
+            risk_level = "high"
+            verdict = "sell"
+            confidence = 0.9
+            reasoning = f"진입 불가: {', '.join(risk_flags)}"
+        elif position_ratio == 0.5:
+            risk_level = "medium"
+            verdict = "neutral"
+            confidence = 0.6
+            reasoning = f"위험 감지 → 포지션 50% 축소: {', '.join(risk_flags)}"
+        else:
+            risk_level = "low"
+            verdict = "buy"
+            confidence = 0.8
+            reasoning = "포트폴리오 상태 정상"
+
+        return AgentOpinion(
+            agent_name=self.name,
+            verdict=verdict,
+            confidence=confidence,
+            reasoning=reasoning,
+            risk_flags=risk_flags,
+            metadata={"position_ratio": position_ratio, "risk_level": risk_level},
+        )
+
+
+risk_agent = RiskManagerAgent()

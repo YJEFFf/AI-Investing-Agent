@@ -1,0 +1,35 @@
+# 환경변수 (API 키 등 민감 정보)
+.env
+.env.*
+
+# KIS 토큰 캐시
+data_store/token_cache.json
+
+# OHLCV 캐시 (용량 큼)
+data_store/ohlcv_cache/
+
+# 로그
+logs/
+
+# 가상환경
+.venv/
+venv/
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 빌드
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
