@@ -67,7 +67,7 @@ async def get_win_rate_stats(session: AsyncSession, limit: int = 50) -> dict:
     """최근 N거래 승률 및 평균 수익/손실 (포지션 사이징용)"""
     trades = await get_recent_trades(session, limit)
     if not trades:
-        return {"win_rate": 0.5, "avg_win_pct": 0.02, "avg_loss_pct": 0.02}
+        return {"win_rate": 0.5, "avg_win_pct": 0.07, "avg_loss_pct": 0.05}
 
     wins = [t for t in trades if (t.profit_loss or 0) > 0]
     losses = [t for t in trades if (t.profit_loss or 0) <= 0]
