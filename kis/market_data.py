@@ -1,8 +1,11 @@
+import logging
 import pandas as pd
 from datetime import datetime
 
 from kis.rest_client import kis_client
 from config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 class KISMarketData:
@@ -79,40 +82,6 @@ class KISMarketData:
         df = df.sort_values("date").reset_index(drop=True)
         return df
 
-    async def get_minute_ohlcv(self, stock_code: str, interval: int = 1) -> pd.DataFrame:
-        """분봉 OHLCV 조회"""
-        data = await kis_client.get(
-            "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
-            tr_id="FHKST03010200",
-            params={
-                "FID_ETC_CLS_CODE": "",
-                "FID_COND_MRKT_DIV_CODE": "J",
-                "FID_INPUT_ISCD": stock_code,
-                "FID_INPUT_HOUR_1": datetime.now().strftime("%H%M%S"),
-                "FID_PW_DATA_INCU_YN": "Y",
-            },
-        )
-        rows = data.get("output2", [])
-        if not rows:
-            return pd.DataFrame()
-
-        df = pd.DataFrame(rows)
-        df = df.rename(columns={
-            "stck_bsop_date": "date",
-            "stck_cntg_hour": "time",
-            "stck_oprc": "open",
-            "stck_hgpr": "high",
-            "stck_lwpr": "low",
-            "stck_prpr": "close",
-            "cntg_vol": "volume",
-        })
-        df = df[["date", "time", "open", "high", "low", "close", "volume"]]
-        for col in ["open", "high", "low", "close", "volume"]:
-            df[col] = pd.to_numeric(df[col])
-        df["datetime"] = pd.to_datetime(df["date"] + df["time"], format="%Y%m%d%H%M%S")
-        df = df.sort_values("datetime").reset_index(drop=True)
-        return df
-
     async def get_kospi_ohlcv(self, count: int = 250) -> pd.DataFrame:
         """KOSPI 지수 일봉 (레짐 감지용) — inquire-daily-indexchartprice 엔드포인트"""
         from datetime import timedelta
@@ -164,6 +133,37 @@ class KISMarketData:
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
         return df
+
+
+    async def get_volume_rank(self, count: int = 200) -> list[dict]:
+        """거래대금 순위 상위 종목 조회"""
+        try:
+            data = await kis_client.get(
+                "/uapi/domestic-stock/v1/quotations/volume-rank",
+                tr_id="FHPST01710000",
+                params={
+                    "FID_COND_MRKT_DIV_CODE": "J",
+                    "FID_COND_SCR_DIV_CODE": "20171",
+                    "FID_INPUT_ISCD": "0000",
+                    "FID_DIV_CLS_CODE": "0",
+                    "FID_BLNG_CLS_CODE": "0",
+                    "FID_TRGT_CLS_CODE": "111111111",
+                    "FID_TRGT_EXLS_CLS_CODE": "0000000000",
+                    "FID_INPUT_PRICE_1": "1000",
+                    "FID_INPUT_PRICE_2": "500000",
+                    "FID_VOL_CNT": "0",
+                    "FID_INPUT_DATE_1": "",
+                },
+            )
+            rows = data.get("output", [])
+            return [
+                {"code": r["mksc_shrn_iscd"], "name": r["hts_kor_isnm"]}
+                for r in rows[:count]
+                if r.get("mksc_shrn_iscd")
+            ]
+        except Exception as e:
+            logger.error(f"거래대금 순위 조회 실패: {e}")
+            return []
 
 
 market_data = KISMarketData()

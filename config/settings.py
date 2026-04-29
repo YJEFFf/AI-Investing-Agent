@@ -41,6 +41,8 @@ class Settings(BaseSettings):
 
     @property
     def kis_ws_url(self) -> str:
+        if self.is_paper:
+            return "ws://ops.koreainvestment.com:31000"
         return "ws://ops.koreainvestment.com:21000"
 
 

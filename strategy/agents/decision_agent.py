@@ -11,6 +11,9 @@ class TradeSignal:
     reasoning: str
     ta_score: float
     risk_level: str
+    target_price: float = 0.0
+    chart_verdict: str = "skip"
+    chart_confidence: float = 0.0
 
 
 class DecisionAgent(BaseAgent):

@@ -1,7 +1,7 @@
 # 워치리스트 설정
 # 초기에는 수동 고정, 안정화 후 auto_select: true로 전환
 
-mode: manual  # manual | auto
+mode: auto  # manual | auto
 
 # 수동 종목 목록 (백테스트 통과: Sharpe ≥ 1.0, MDD ≤ 15%)
 stocks:

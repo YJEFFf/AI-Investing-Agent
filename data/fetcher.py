@@ -25,10 +25,6 @@ class OHLCVFetcher:
             df.to_parquet(cache_path, index=False)
         return df
 
-    async def fetch_minute(self, stock_code: str) -> pd.DataFrame:
-        logger.debug(f"Fetching minute OHLCV: {stock_code}")
-        return await market_data.get_minute_ohlcv(stock_code)
-
     async def fetch_kospi(self, count: int = 250) -> pd.DataFrame:
         cache_path = _CACHE_DIR / "KOSPI_daily.parquet"
         cached = self._load_cache(cache_path)

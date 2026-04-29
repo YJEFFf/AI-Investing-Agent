@@ -7,7 +7,6 @@ from kis.order import kis_order, OrderResult
 from repository.models import Trade, Position
 from repository.queries import save_trade, save_position, delete_position, get_position
 from strategy.agents.decision_agent import TradeSignal
-from risk.stop_loss import calc_initial_stop
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +26,19 @@ class OrderManager:
             logger.error(f"Buy order failed: {stock_code} x{qty}")
             return result
 
-        stop_price = calc_initial_stop(current_price, signal.stop_type)
+        trail_pct = (current_price - signal.stop_price) / current_price if current_price > 0 else 0.05
 
         position = Position(
             stock_code=stock_code,
             stock_name=stock_name,
             qty=qty,
             avg_price=current_price,
-            stop_price=stop_price,
+            stop_price=int(signal.stop_price),
             stop_type=signal.stop_type,
+            target_price=signal.target_price if signal.target_price > 0 else None,
+            trail_pct=round(trail_pct, 4),
             highest_price=current_price,
-            trade_type="day",
+            trade_type="swing",
             opened_at=datetime.utcnow(),
         )
         await save_position(session, position)
@@ -49,11 +50,11 @@ class OrderManager:
             entry_at=datetime.utcnow(),
             entry_price=current_price,
             entry_qty=qty,
-            stop_price=stop_price,
+            stop_price=int(signal.stop_price),
             stop_type=signal.stop_type,
         )
         await save_trade(session, trade)
-        logger.info(f"Buy executed: {stock_code} x{qty} @ {current_price}, stop={stop_price}")
+        logger.info(f"Buy executed: {stock_code} x{qty} @ {current_price}, stop={signal.stop_price}, target={signal.target_price}")
         return result
 
     async def execute_sell(

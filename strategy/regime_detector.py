@@ -46,11 +46,3 @@ def detect_regime(kospi_df: pd.DataFrame) -> MarketRegime:
     return MarketRegime.RANGING
 
 
-def get_entry_threshold(regime: MarketRegime) -> float:
-    """레짐별 TA 진입 최소 점수"""
-    return {
-        MarketRegime.TRENDING_UP: 55.0,
-        MarketRegime.RANGING: 65.0,
-        MarketRegime.HIGH_VOLATILITY: 70.0,
-        MarketRegime.TRENDING_DOWN: 999.0,  # 사실상 매수 불가
-    }[regime]

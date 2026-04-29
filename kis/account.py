@@ -44,7 +44,7 @@ class KISAccount:
         tr_id = "VTTC8434R" if settings.is_paper else "TTTC8434R"
         data = await kis_client.get(
             "/uapi/domestic-stock/v1/trading/inquire-balance",
-            tr_id="VTTC8434R" if settings.is_paper else "TTTC8434R",
+            tr_id=tr_id,
             params={
                 "CANO": acnt_no,
                 "ACNT_PRDT_CD": acnt_prdt_cd,

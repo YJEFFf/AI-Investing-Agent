@@ -1,3 +1,4 @@
+from config.settings import settings
 from strategy.agents.base_agent import BaseAgent, AgentOpinion
 
 
@@ -13,22 +14,14 @@ class RiskManagerAgent(BaseAgent):
         drawdown_pct: float = context.get("drawdown_pct", 0.0)
 
         risk_flags = []
-        all_flags = []
-        for op in opinions:
-            all_flags.extend(op.risk_flags)
 
         # 포트폴리오 상태 체크
-        if open_positions >= 5:
+        if open_positions >= settings.max_open_positions:
             risk_flags.append("max_positions_reached")
-        if daily_pnl_pct <= -0.03:
+        if daily_pnl_pct <= -settings.daily_loss_cap:
             risk_flags.append("daily_loss_cap_hit")
-        if drawdown_pct >= 0.10:
+        if drawdown_pct >= settings.max_drawdown_pct:
             risk_flags.append("max_drawdown_hit")
-
-        # 뉴스 위험 플래그 전파
-        critical_flags = {"earnings_tomorrow", "regulatory_risk", "accounting_issue", "delisting_risk"}
-        found_critical = critical_flags.intersection(set(all_flags))
-        risk_flags.extend(found_critical)
 
         # 포지션 크기 권장
         if risk_flags:

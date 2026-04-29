@@ -68,7 +68,8 @@ class BacktestEngine:
                     continue
 
                 score = compute_score(ta_result, current_price, regime)
-                if score >= threshold:
+                # 새 전략 기준: TA 45점 이상 (LLM이 추가 판단하는 구간까지 포함)
+                if score >= 45 and score >= threshold * 0.7:
                     buy_price = int(current_price * (1 + _SLIPPAGE_BUY))
                     fee = int(buy_price * _FEE_BUY)
                     budget = int(cash * 0.10)  # 10% 포지션

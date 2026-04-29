@@ -12,7 +12,7 @@ from kis.auth import kis_auth
 
 logger = logging.getLogger(__name__)
 
-_RECONNECT_DELAY = 5
+_RECONNECT_DELAY = 30
 _MAX_SUBSCRIPTIONS = 41
 
 
@@ -47,12 +47,15 @@ class KISWebSocketClient:
 
     async def connect_and_run(self) -> None:
         self._running = True
+        delay = _RECONNECT_DELAY
         while self._running:
             try:
                 await self._run_session()
+                delay = _RECONNECT_DELAY  # 정상 종료 시 딜레이 초기화
             except Exception as e:
-                logger.error(f"WebSocket 연결 오류: {e}, {_RECONNECT_DELAY}초 후 재연결")
-                await asyncio.sleep(_RECONNECT_DELAY)
+                logger.error(f"WebSocket 연결 오류: {e}, {delay}초 후 재연결")
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 300)  # 지수 백오프, 최대 5분
 
     async def stop(self) -> None:
         self._running = False
@@ -61,13 +64,20 @@ class KISWebSocketClient:
 
     async def _run_session(self) -> None:
         approval_key = await self._get_approval_key()
-        async with websockets.connect(settings.kis_ws_url) as ws:
+        async with websockets.connect(
+            settings.kis_ws_url,
+            ping_interval=None,
+            ping_timeout=None,
+            close_timeout=10,
+        ) as ws:
             self._ws = ws
             logger.info("WebSocket 연결됨")
 
-            # 구독 중인 종목 등록
+            # 서버 준비 대기 후 구독 전송
+            await asyncio.sleep(1.0)
             for code in list(self._subscriptions):
                 await self._send_subscribe(ws, approval_key, code)
+                await asyncio.sleep(0.1)
 
             async for message in ws:
                 if not self._running:

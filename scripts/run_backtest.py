@@ -25,7 +25,7 @@ async def main():
     # KOSPI 데이터 로드
     kospi_df = await fetcher.fetch_kospi(500)
 
-    engine = BacktestEngine(initial_cash=1_000_000)
+    engine = BacktestEngine(initial_cash=10_000_000)
 
     for stock in stocks:
         code = stock["code"]

@@ -22,19 +22,15 @@ class SignalAction(str, enum.Enum):
 
 
 class Signal(Base):
-    """에이전트 토론 결과 및 매매 신호"""
+    """차트 분석 신호 로그"""
     __tablename__ = "signals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     stock_code = Column(String(10), nullable=False)
     ta_score = Column(Float, nullable=False)
-    ta_agent_verdict = Column(String(10))
-    ta_agent_confidence = Column(Float)
-    news_agent_verdict = Column(String(10))
-    news_agent_confidence = Column(Float)
-    market_agent_verdict = Column(String(10))
-    market_agent_confidence = Column(Float)
+    chart_verdict = Column(String(10))
+    chart_confidence = Column(Float)
     risk_level = Column(String(10))
     final_action = Column(String(10), nullable=False)
     position_size_pct = Column(Float)
@@ -73,8 +69,10 @@ class Position(Base):
     avg_price = Column(Float, nullable=False)
     stop_price = Column(Float, nullable=False)
     stop_type = Column(String(20), default="fixed")
+    target_price = Column(Float)
+    trail_pct = Column(Float)       # trailing stop 비율 (LLM 손절가에서 계산)
     highest_price = Column(Float)   # 트레일링 스탑용 고점 추적
-    trade_type = Column(String(10), default="day")  # day | swing
+    trade_type = Column(String(10), default="swing")  # day | swing
     opened_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -1,17 +1,14 @@
-import asyncio
 import logging
 
 import pandas as pd
 
-from data.news_scraper import NewsItem
-from strategy.ta_engine import ta_engine, TAResult
+from config.settings import settings
+from strategy.ta_engine import ta_engine
 from strategy.signal_scorer import compute_score
 from strategy.regime_detector import MarketRegime, detect_regime
-from strategy.agents.ta_agent import ta_agent
-from strategy.agents.news_agent import news_agent
-from strategy.agents.market_agent import market_agent
+from strategy.agents.chart_agent import chart_agent
 from strategy.agents.risk_agent import risk_agent
-from strategy.agents.decision_agent import decision_agent, TradeSignal
+from strategy.agents.decision_agent import TradeSignal
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +19,6 @@ class MultiAgentStrategy:
         stock_code: str,
         stock_name: str,
         ohlcv_df: pd.DataFrame,
-        news_items: list[NewsItem],
         kospi_df: pd.DataFrame,
         open_positions: int,
         daily_pnl_pct: float,
@@ -39,14 +35,14 @@ class MultiAgentStrategy:
 
         current_price = float(ohlcv_df["close"].iloc[-1])
 
-        # 2. 시장 레짐 감지
+        # 2. 시장 레짐
         regime = detect_regime(kospi_df)
 
         # 3. TA 복합 점수
         ta_score = compute_score(ta_result, current_price, regime)
 
-        # 4. TA 하드 룰 — 45점 미만이면 에이전트 토론 생략
-        if ta_score < 45:
+        # 4. TA 최소 필터 — 35점 미만이면 스킵 (이미지가 주 판단)
+        if ta_score < 35:
             logger.debug(f"{stock_code} TA 점수 미달 ({ta_score:.1f}) → 스킵")
             return TradeSignal(
                 action="skip", position_ratio=0.0, stop_price=0.0,
@@ -54,7 +50,7 @@ class MultiAgentStrategy:
                 ta_score=ta_score, risk_level="low",
             )
 
-        # 5. 하락장이면 토론 생략
+        # 5. 하락장이면 스킵
         if regime == MarketRegime.TRENDING_DOWN:
             return TradeSignal(
                 action="skip", position_ratio=0.0, stop_price=0.0,
@@ -62,45 +58,70 @@ class MultiAgentStrategy:
                 ta_score=ta_score, risk_level="high",
             )
 
-        # 6. 기술적/뉴스/시장 에이전트 병렬 실행
-        kospi_change_pct = float(
-            (kospi_df["close"].iloc[-1] - kospi_df["close"].iloc[-2])
-            / kospi_df["close"].iloc[-2] * 100
-        ) if len(kospi_df) >= 2 else 0.0
-
-        ta_ctx = {"ta_result": ta_result, "ta_score": ta_score, "current_price": current_price}
-        news_ctx = {"stock_code": stock_code, "stock_name": stock_name, "news_items": news_items}
-        market_ctx = {"regime": regime, "kospi_change_pct": kospi_change_pct}
-
-        ta_op, news_op, market_op = await asyncio.gather(
-            ta_agent.analyze(ta_ctx),
-            news_agent.analyze(news_ctx),
-            market_agent.analyze(market_ctx),
-        )
+        # 6. 차트 이미지 분석 (LLM vision)
+        chart_op = await chart_agent.analyze({
+            "ohlcv_df": ohlcv_df,
+            "ta_score": ta_score,
+            "current_price": current_price,
+            "regime": regime,
+            "stock_name": stock_name,
+            "stock_code": stock_code,
+        })
 
         logger.info(
-            f"[{stock_code}] TA:{ta_op.verdict}({ta_op.confidence:.2f}) "
-            f"뉴스:{news_op.verdict}({news_op.confidence:.2f}) "
-            f"시장:{market_op.verdict}({market_op.confidence:.2f})"
+            f"[{stock_code}] 차트:{chart_op.verdict}({chart_op.confidence:.2f}) | {chart_op.reasoning}"
         )
 
-        # 7. 리스크 관리자 평가
-        risk_ctx = {
-            "opinions": [ta_op, news_op, market_op],
+        # 7. 리스크 관리자 (룰 기반)
+        risk_op = await risk_agent.analyze({
+            "opinions": [chart_op],
             "open_positions": open_positions,
             "daily_pnl_pct": daily_pnl_pct,
             "drawdown_pct": drawdown_pct,
-        }
-        risk_op = await risk_agent.analyze(risk_ctx)
+        })
+
+        risk_meta = risk_op.metadata
+        position_ratio = risk_meta.get("position_ratio", 1.0)
+        risk_level = risk_meta.get("risk_level", "low")
 
         # 8. 최종 결정
-        signal = decision_agent.make_decision(
-            ta_op, news_op, market_op, risk_op,
-            current_price, ta_result.atr, ta_score,
-        )
+        if position_ratio == 0.0:
+            return TradeSignal(
+                action="skip", position_ratio=0.0, stop_price=0.0,
+                stop_type="none", reasoning=f"리스크 차단: {risk_op.reasoning}",
+                ta_score=ta_score, risk_level=risk_level,
+            )
 
-        logger.info(f"[{stock_code}] 최종 결정: {signal.action} | {signal.reasoning}")
-        return signal
+        if chart_op.verdict == "buy" and chart_op.confidence >= 0.70:
+            stop_pct = chart_op.metadata.get("stop_pct", settings.swing_stop_pct)
+            target_pct = chart_op.metadata.get("target_pct", 0.07)
+            stop_price = round(current_price * (1 - stop_pct))
+            target_price = round(current_price * (1 + target_pct))
+            reasoning = f"차트:{chart_op.verdict}({chart_op.confidence:.2f}) | {chart_op.reasoning}"
+            logger.info(f"[{stock_code}] 최종 결정: buy | {reasoning}")
+            return TradeSignal(
+                action="buy",
+                position_ratio=position_ratio,
+                stop_price=stop_price,
+                stop_type="trailing",
+                reasoning=reasoning,
+                ta_score=ta_score,
+                risk_level=risk_level,
+                target_price=target_price,
+                chart_verdict=chart_op.verdict,
+                chart_confidence=chart_op.confidence,
+            )
+
+        logger.info(
+            f"[{stock_code}] 최종 결정: skip | "
+            f"매수 신호 미달 ({chart_op.verdict}, confidence={chart_op.confidence:.2f})"
+        )
+        return TradeSignal(
+            action="skip", position_ratio=0.0, stop_price=0.0,
+            stop_type="none",
+            reasoning=f"매수 신호 미달 ({chart_op.verdict}, confidence={chart_op.confidence:.2f})",
+            ta_score=ta_score, risk_level=risk_level,
+        )
 
 
 multi_agent_strategy = MultiAgentStrategy()

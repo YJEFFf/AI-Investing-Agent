@@ -19,12 +19,6 @@ def create_scheduler(orchestrator) -> AsyncIOScheduler:
         id="market_open",
     )
     scheduler.add_job(
-        orchestrator.news_poll,
-        "interval",
-        minutes=2,
-        id="news_poll",
-    )
-    scheduler.add_job(
         orchestrator.pre_close,
         CronTrigger(hour=15, minute=20, day_of_week="mon-fri"),
         id="pre_close",
