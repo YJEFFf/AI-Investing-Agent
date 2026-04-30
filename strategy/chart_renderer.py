@@ -9,6 +9,9 @@ import pandas as pd
 import pandas_ta as pta
 from matplotlib.gridspec import GridSpec
 
+import warnings
+warnings.filterwarnings("ignore", message="findfont")
+
 logger = logging.getLogger(__name__)
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
