@@ -92,7 +92,7 @@ class MultiAgentStrategy:
                 ta_score=ta_score, risk_level=risk_level,
             )
 
-        if chart_op.verdict == "buy" and chart_op.confidence >= 0.70:
+        if chart_op.verdict == "buy" and chart_op.confidence >= 0.55:
             stop_pct = chart_op.metadata.get("stop_pct", settings.swing_stop_pct)
             target_pct = chart_op.metadata.get("target_pct", 0.07)
             stop_price = round(current_price * (1 - stop_pct))
