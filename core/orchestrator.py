@@ -22,6 +22,7 @@ from strategy.regime_detector import detect_regime, MarketRegime
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
+from core.notifier import notify_buy, notify_sell, notify_daily_summary
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +204,10 @@ class Orchestrator:
                 await order_manager.execute_buy(
                     session, code, stock_name, qty, signal, current_price
                 )
+                await notify_buy(
+                    code, stock_name, qty, current_price,
+                    signal.target_price, signal.stop_price, signal.chart_confidence,
+                )
                 open_pos_count += 1
                 await self._refresh_balance()
                 balance = self._cached_balance
@@ -226,6 +231,12 @@ class Orchestrator:
         async with AsyncSessionLocal() as session:
             pnl = await get_today_realized_pnl(session)
             logger.info(f"오늘 실현 손익: {pnl:+,}원")
+            positions = await get_open_positions(session)
+            await notify_daily_summary(
+                signals=len(self._pending_signals),
+                trades=len(positions),
+                pnl=pnl,
+            )
 
     async def _polling_loop(self) -> None:
         """1분마다 보유 종목 현재가 조회 → 익절/손절 체크 (스윙 모드)"""
@@ -272,6 +283,8 @@ class Orchestrator:
                     await order_manager.execute_sell(
                         session, code, pos.qty, current_price, "take_profit"
                     )
+                    pnl = (current_price - pos.avg_price) * pos.qty
+                    await notify_sell(code, pos.stock_name, pos.qty, current_price, "take_profit", pnl)
                     await self._refresh_balance()
                     return
 
@@ -289,6 +302,8 @@ class Orchestrator:
                     await order_manager.execute_sell(
                         session, code, pos.qty, current_price, "stop_loss"
                     )
+                    pnl = (current_price - pos.avg_price) * pos.qty
+                    await notify_sell(code, pos.stock_name, pos.qty, current_price, "stop_loss", pnl)
                     await self._refresh_balance()
                     return
 
