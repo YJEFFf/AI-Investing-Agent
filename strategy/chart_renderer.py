@@ -19,6 +19,9 @@ import platform
 if platform.system() == "Darwin":
     plt.rcParams["font.family"] = "AppleGothic"
     plt.rcParams["axes.unicode_minus"] = False
+else:
+    plt.rcParams["font.family"] = "NanumGothic"
+    plt.rcParams["axes.unicode_minus"] = False
 
 
 def render_daily_chart(

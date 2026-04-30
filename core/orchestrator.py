@@ -310,12 +310,14 @@ class Orchestrator:
         logger.info("스케줄러 시작됨")
 
         now = datetime.now()
-        if now >= now.replace(hour=8, minute=30, second=0, microsecond=0):
-            logger.info("08:30 이후 시작 — pre_market_setup 즉시 실행")
-            await self.pre_market_setup()
-        if now >= now.replace(hour=9, minute=0, second=0, microsecond=0):
-            logger.info("09:00 이후 시작 — market_open 즉시 실행")
-            await self.market_open()
+        market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+        if now < market_close:
+            if now >= now.replace(hour=8, minute=30, second=0, microsecond=0):
+                logger.info("08:30 이후 시작 — pre_market_setup 즉시 실행")
+                await self.pre_market_setup()
+            if now >= now.replace(hour=9, minute=0, second=0, microsecond=0):
+                logger.info("09:00 이후 시작 — market_open 즉시 실행")
+                await self.market_open()
 
         if not settings.is_paper:
             asyncio.create_task(kis_ws.connect_and_run())
