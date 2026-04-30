@@ -10,13 +10,12 @@ import pandas_ta as pta
 from matplotlib.gridspec import GridSpec
 
 logger = logging.getLogger(__name__)
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
-# macOS 한글 폰트
-try:
+import platform
+if platform.system() == "Darwin":
     plt.rcParams["font.family"] = "AppleGothic"
     plt.rcParams["axes.unicode_minus"] = False
-except Exception:
-    pass
 
 
 def render_daily_chart(
