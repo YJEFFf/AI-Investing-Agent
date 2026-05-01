@@ -23,6 +23,7 @@ from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
 from core.notifier import notify_buy, notify_sell, notify_daily_summary
+from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,9 @@ class Orchestrator:
 
     async def pre_market_setup(self) -> None:
         """08:30 장 시작 전 준비 — 일봉 데이터 로드 + 차트 이미지 분석"""
+        if not is_trading_day():
+            logger.info("휴장일 — 장전 준비 스킵")
+            return
         logger.info("장전 준비 시작")
         self._pending_signals.clear()
 
@@ -123,6 +127,9 @@ class Orchestrator:
 
     async def market_open(self) -> None:
         """09:00 장 시작"""
+        if not is_trading_day():
+            logger.info("휴장일 — 장 시작 스킵")
+            return
         logger.info("장 시작 — 매매 활성화")
         self._trading_active = True
 
@@ -216,6 +223,9 @@ class Orchestrator:
 
     async def market_close(self) -> None:
         """15:30 장 종료"""
+        if not is_trading_day():
+            logger.info("휴장일 — 장 종료 스킵")
+            return
         logger.info("장 종료 처리")
         self._trading_active = False
         await kis_ws.stop()
@@ -223,10 +233,16 @@ class Orchestrator:
 
     async def pre_close(self) -> None:
         """15:20 장마감 전 스윙 포지션 점검"""
+        if not is_trading_day():
+            logger.info("휴장일 — 장마감 전 점검 스킵")
+            return
         logger.info("장마감 전 스윙 포지션 점검")
 
     async def post_market(self) -> None:
         """15:35 장 후 정산"""
+        if not is_trading_day():
+            logger.info("휴장일 — 장 후 정산 스킵")
+            return
         logger.info("장 후 정산 중")
         async with AsyncSessionLocal() as session:
             pnl = await get_today_realized_pnl(session)
