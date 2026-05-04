@@ -63,6 +63,24 @@ async def save_trade(session: AsyncSession, trade: Trade) -> Trade:
     return trade
 
 
+async def get_today_trade_count(session: AsyncSession) -> int:
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(func.count(Trade.id))
+        .where(func.date(Trade.entry_at) == today)
+    )
+    return result.scalar() or 0
+
+
+async def get_today_signal_count(session: AsyncSession) -> int:
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(func.count(Signal.id))
+        .where(func.date(Signal.created_at) == today)
+    )
+    return result.scalar() or 0
+
+
 async def get_win_rate_stats(session: AsyncSession, limit: int = 50) -> dict:
     """최근 N거래 승률 및 평균 수익/손실 (포지션 사이징용)"""
     trades = await get_recent_trades(session, limit)

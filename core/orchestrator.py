@@ -12,7 +12,8 @@ from kis.websocket_client import kis_ws, Tick
 from repository.database import AsyncSessionLocal
 from repository.models import Signal
 from repository.queries import (
-    get_open_positions, get_today_realized_pnl, get_win_rate_stats, save_signal
+    get_open_positions, get_today_realized_pnl, get_win_rate_stats, save_signal,
+    get_today_trade_count, get_today_signal_count,
 )
 from risk.portfolio_guard import portfolio_guard
 from risk.position_sizer import calc_position_size
@@ -247,10 +248,11 @@ class Orchestrator:
         async with AsyncSessionLocal() as session:
             pnl = await get_today_realized_pnl(session)
             logger.info(f"오늘 실현 손익: {pnl:+,}원")
-            positions = await get_open_positions(session)
+            signal_count = await get_today_signal_count(session)
+            trade_count = await get_today_trade_count(session)
             await notify_daily_summary(
-                signals=len(self._pending_signals),
-                trades=len(positions),
+                signals=signal_count,
+                trades=trade_count,
                 pnl=pnl,
             )
 
