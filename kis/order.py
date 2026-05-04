@@ -1,5 +1,7 @@
+import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 
 from config.settings import settings
 from kis.rest_client import kis_client
@@ -16,6 +18,7 @@ class OrderResult:
     price: int
     success: bool
     message: str = ""
+    fill_price: int = 0  # 실제 체결가 (0이면 미확인)
 
 
 class KISOrder:
@@ -33,16 +36,65 @@ class KISOrder:
         return acnt_no, acnt_prdt_cd
 
     async def market_buy(self, stock_code: str, qty: int) -> OrderResult:
-        return await self._submit_order(stock_code, qty, 0, "buy", "01")
+        result = await self._submit_order(stock_code, qty, 0, "buy", "01")
+        if result.success and result.order_no:
+            result.fill_price = await self._fetch_fill_price(result.order_no, stock_code)
+        return result
 
     async def market_sell(self, stock_code: str, qty: int) -> OrderResult:
-        return await self._submit_order(stock_code, qty, 0, "sell", "01")
+        result = await self._submit_order(stock_code, qty, 0, "sell", "01")
+        if result.success and result.order_no:
+            result.fill_price = await self._fetch_fill_price(result.order_no, stock_code)
+        return result
 
     async def limit_buy(self, stock_code: str, qty: int, price: int) -> OrderResult:
         return await self._submit_order(stock_code, qty, price, "buy", "00")
 
     async def limit_sell(self, stock_code: str, qty: int, price: int) -> OrderResult:
         return await self._submit_order(stock_code, qty, price, "sell", "00")
+
+    async def _fetch_fill_price(self, order_no: str, stock_code: str, retries: int = 3) -> int:
+        """주문번호로 실제 체결가 조회. 체결 확인까지 최대 3회 재시도."""
+        acnt_no, acnt_prdt_cd = self._get_account_parts()
+        tr_id = "VTTC8001R" if settings.is_paper else "TTTC8001R"
+        today = datetime.now().strftime("%Y%m%d")
+        params = {
+            "CANO": acnt_no,
+            "ACNT_PRDT_CD": acnt_prdt_cd,
+            "INQR_STRT_DT": today,
+            "INQR_END_DT": today,
+            "SLL_BUY_DVSN_CD": "00",
+            "INQR_DVSN": "01",
+            "PDNO": stock_code,
+            "CCLD_DVSN": "01",
+            "ORD_GNO_BRNO": "",
+            "ODNO": order_no,
+            "INQR_DVSN_3": "",
+            "INQR_DVSN_1": "",
+            "CTX_AREA_FK100": "",
+            "CTX_AREA_NK100": "",
+        }
+        for attempt in range(retries):
+            if attempt > 0:
+                await asyncio.sleep(1)
+            try:
+                data = await kis_client.get(
+                    "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+                    tr_id=tr_id,
+                    params=params,
+                )
+                records = data.get("output1", [])
+                for rec in records:
+                    if rec.get("ODNO") == order_no or not order_no:
+                        raw = rec.get("CCLD_UNPR") or rec.get("AVG_PRVS", "0")
+                        price = int(str(raw).replace(",", ""))
+                        if price > 0:
+                            logger.info(f"실제 체결가 확인: {stock_code} {order_no} → {price:,}원")
+                            return price
+            except Exception as e:
+                logger.debug(f"체결가 조회 실패 (시도 {attempt + 1}): {e}")
+        logger.warning(f"체결가 조회 실패 — 추정가 사용: {stock_code} {order_no}")
+        return 0
 
     async def cancel_order(self, order_no: str, stock_code: str, qty: int) -> OrderResult:
         acnt_no, acnt_prdt_cd = self._get_account_parts()

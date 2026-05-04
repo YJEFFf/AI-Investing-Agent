@@ -209,12 +209,17 @@ class Orchestrator:
                     reasoning=signal.reasoning,
                 )
                 await save_signal(session, signal_record)
-                await order_manager.execute_buy(
+                _, fill_price = await order_manager.execute_buy(
                     session, code, stock_name, qty, signal, current_price
                 )
+                # fill_price: 실제 KIS 체결가 (조회 실패 시 current_price fallback)
+                # stop/target을 fill_price 기준 비율로 재산출해 알림
+                price_ratio = fill_price / current_price if current_price > 0 else 1.0
+                notify_stop = round(signal.stop_price * price_ratio)
+                notify_target = round(signal.target_price * price_ratio) if signal.target_price > 0 else 0
                 await notify_buy(
-                    code, stock_name, qty, current_price,
-                    signal.target_price, signal.stop_price, signal.chart_confidence,
+                    code, stock_name, qty, fill_price,
+                    notify_target, notify_stop, signal.chart_confidence,
                 )
                 open_pos_count += 1
                 await self._refresh_balance()
@@ -298,11 +303,11 @@ class Orchestrator:
                 # 익절 체크
                 if pos.target_price and current_price >= pos.target_price:
                     logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
-                    await order_manager.execute_sell(
+                    _, fill_price = await order_manager.execute_sell(
                         session, code, pos.qty, current_price, "take_profit"
                     )
-                    pnl = (current_price - pos.avg_price) * pos.qty
-                    await notify_sell(code, pos.stock_name, pos.qty, current_price, "take_profit", pnl)
+                    pnl = (fill_price - int(pos.avg_price)) * pos.qty
+                    await notify_sell(code, pos.stock_name, pos.qty, fill_price, "take_profit", pnl)
                     await self._refresh_balance()
                     return
 
@@ -317,11 +322,11 @@ class Orchestrator:
                 # 손절 체크
                 if should_stop(pos, current_price):
                     logger.info(f"손절 발동: {code} @ {current_price} (손절가: {pos.stop_price})")
-                    await order_manager.execute_sell(
+                    _, fill_price = await order_manager.execute_sell(
                         session, code, pos.qty, current_price, "stop_loss"
                     )
-                    pnl = (current_price - pos.avg_price) * pos.qty
-                    await notify_sell(code, pos.stock_name, pos.qty, current_price, "stop_loss", pnl)
+                    pnl = (fill_price - int(pos.avg_price)) * pos.qty
+                    await notify_sell(code, pos.stock_name, pos.qty, fill_price, "stop_loss", pnl)
                     await self._refresh_balance()
                     return
 
