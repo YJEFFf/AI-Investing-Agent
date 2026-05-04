@@ -20,8 +20,10 @@ def calc_position_size(
     else:
         half_kelly = settings.max_position_pct
 
-    # 최대 비율 캡 적용
-    fraction = min(half_kelly, settings.max_position_pct) * position_ratio
+    # 최대 비율 캡 적용 + 5% 슬리피지 버퍼
+    # 시장가 주문은 조회 시점보다 높은 가격에 체결될 수 있으므로
+    # 예산을 5% 줄여 실제 체결가가 높아도 한도 초과 방지
+    fraction = min(half_kelly, settings.max_position_pct) * position_ratio * 0.95
     budget = int(available_cash * fraction)
 
     # 잔고 기반 가격 필터: 주당 가격 ≤ 잔고 × 0.95

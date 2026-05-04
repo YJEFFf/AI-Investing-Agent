@@ -22,21 +22,26 @@ _DEFAULT_WEIGHTS = {"rsi": 0.25, "macd": 0.25, "bb": 0.20, "ema": 0.20, "volume"
 
 
 def compute_score(ta: TAResult, current_price: float, regime: MarketRegime) -> float:
-    """TA 지표를 0~100점 복합 점수로 변환"""
+    """TA 지표를 0~100점 복합 점수로 변환.
+
+    두 가지 스윙 패턴을 모두 평가:
+    - 저점반등형: RSI 30~45 + BB 하단 → 전통적 역추세 매수
+    - 모멘텀돌파형: RSI 50~65 + EMA 우상향 + 거래량 급증 → 추세 추종 매수
+    """
     w = _WEIGHTS.get(regime, _DEFAULT_WEIGHTS)
     scores = {}
 
-    # RSI: 20~40 구간 반등이 가장 좋은 신호
+    # RSI: 저점반등(30~45 최고), 모멘텀(50~65)도 긍정 평가
     if ta.rsi <= 30:
         scores["rsi"] = 90
-    elif ta.rsi <= 40:
-        scores["rsi"] = 75
-    elif ta.rsi <= 50:
-        scores["rsi"] = 55
-    elif ta.rsi <= 60:
-        scores["rsi"] = 40
-    elif ta.rsi <= 70:
-        scores["rsi"] = 25
+    elif ta.rsi <= 45:
+        scores["rsi"] = 78
+    elif ta.rsi <= 55:
+        scores["rsi"] = 60
+    elif ta.rsi <= 65:
+        scores["rsi"] = 55   # 모멘텀 구간 — 이전 25점에서 상향
+    elif ta.rsi <= 75:
+        scores["rsi"] = 30
     else:
         scores["rsi"] = 10
 
@@ -50,20 +55,21 @@ def compute_score(ta: TAResult, current_price: float, regime: MarketRegime) -> f
     else:
         scores["macd"] = 35
 
-    # 볼린저밴드: 하단 터치 후 반등
+    # 볼린저밴드: 하단반등(최고) + 상단돌파시도(거래량 동반 시 긍정)
     bb_range = ta.bb_upper - ta.bb_lower
     if bb_range > 0:
         position = (current_price - ta.bb_lower) / bb_range
         if position <= 0.15:
-            scores["bb"] = 85   # 하단 근처 (매수 신호)
+            scores["bb"] = 85   # 하단 근처 — 저점반등 신호
         elif position <= 0.35:
             scores["bb"] = 70
         elif position <= 0.65:
             scores["bb"] = 50   # 중간
         elif position <= 0.85:
-            scores["bb"] = 30
+            scores["bb"] = 35
         else:
-            scores["bb"] = 15   # 상단 근처 (과매수)
+            # 상단 근처: 거래량 동반 시 돌파 시도로 긍정 평가
+            scores["bb"] = 55 if ta.volume_ratio >= 1.5 else 15
     else:
         scores["bb"] = 50
 
@@ -88,4 +94,15 @@ def compute_score(ta: TAResult, current_price: float, regime: MarketRegime) -> f
         scores["volume"] = 20
 
     total = sum(scores[k] * w[k] for k in scores)
+
+    # 모멘텀 돌파형 보너스: EMA 우상향 + RSI 50~70 + 거래량 급증 + MACD 양전
+    momentum_breakout = (
+        ta.ema_20 > ta.ema_60
+        and 50 <= ta.rsi <= 70
+        and ta.volume_ratio >= 1.5
+        and ta.macd_hist > 0
+    )
+    if momentum_breakout:
+        total = min(100.0, total + 12)
+
     return round(total, 1)

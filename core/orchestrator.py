@@ -298,23 +298,39 @@ class Orchestrator:
                 if pos.stock_code != code:
                     continue
 
-                # 익절 체크
+                # 익절 체크 — 절반 먼저 매도, 나머지는 손익분기 trailing stop으로 유지
                 if pos.target_price and current_price >= pos.target_price:
-                    logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
-                    _, fill_price = await order_manager.execute_sell(
-                        session, code, pos.qty, current_price, "take_profit"
-                    )
-                    pnl = (fill_price - int(pos.avg_price)) * pos.qty
-                    await notify_sell(code, pos.stock_name, pos.qty, fill_price, "take_profit", pnl)
+                    half_qty = pos.qty // 2
+                    if half_qty > 0 and pos.qty > 1:
+                        logger.info(f"절반 익절: {code} x{half_qty} @ {current_price} (목표가: {pos.target_price})")
+                        _, fill_price = await order_manager.execute_partial_sell(
+                            session, code, half_qty, current_price, "partial_take_profit"
+                        )
+                        pnl = (fill_price - int(pos.avg_price)) * half_qty
+                        await notify_sell(code, pos.stock_name, half_qty, fill_price, "partial_take_profit", pnl)
+                        # 나머지 절반: 손익분기(avg_price)로 stop 이동, target 제거
+                        pos.stop_price = int(pos.avg_price)
+                        pos.target_price = None
+                        await session.commit()
+                    else:
+                        # 1주만 보유 시 전량 익절
+                        logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
+                        _, fill_price = await order_manager.execute_sell(
+                            session, code, pos.qty, current_price, "take_profit"
+                        )
+                        pnl = (fill_price - int(pos.avg_price)) * pos.qty
+                        await notify_sell(code, pos.stock_name, pos.qty, fill_price, "take_profit", pnl)
                     await self._refresh_balance()
                     return
 
                 # 트레일링 스톱 업데이트
                 if pos.stop_type == "trailing":
                     new_stop = update_trailing_stop(pos, current_price)
-                    if new_stop != int(pos.stop_price):
+                    updated_highest = max(pos.highest_price or 0, current_price)
+                    # stop이 바뀌거나 신고점 갱신 시 모두 커밋 (highest_price 항상 최신 유지)
+                    if new_stop != int(pos.stop_price) or updated_highest != (pos.highest_price or 0):
                         pos.stop_price = new_stop
-                        pos.highest_price = max(pos.highest_price or 0, current_price)
+                        pos.highest_price = updated_highest
                         await session.commit()
 
                 # 손절 체크

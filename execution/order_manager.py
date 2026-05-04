@@ -75,7 +75,7 @@ class OrderManager:
         current_price: int,
         exit_reason: str,
     ) -> tuple[OrderResult, int]:
-        """매도 실행. (OrderResult, 실제_체결가) 반환."""
+        """전량 매도. (OrderResult, 실제_체결가) 반환."""
         result = await kis_order.market_sell(stock_code, qty)
         if not result.success:
             logger.error(f"Sell order failed: {stock_code} x{qty}")
@@ -106,6 +106,50 @@ class OrderManager:
             await delete_position(session, stock_code)
 
         logger.info(f"Sell executed: {stock_code} x{qty} @ {fill_price:,} ({exit_reason})")
+        return result, fill_price
+
+    async def execute_partial_sell(
+        self,
+        session: AsyncSession,
+        stock_code: str,
+        qty: int,
+        current_price: int,
+        exit_reason: str,
+    ) -> tuple[OrderResult, int]:
+        """부분 매도 — 포지션을 유지하면서 qty만 매도. (OrderResult, 실제_체결가) 반환."""
+        result = await kis_order.market_sell(stock_code, qty)
+        if not result.success:
+            logger.error(f"Partial sell failed: {stock_code} x{qty}")
+            return result, current_price
+
+        fill_price = result.fill_price or current_price
+        if result.fill_price and result.fill_price != current_price:
+            logger.info(f"체결가 반영: {stock_code} 추정가 {current_price:,} → 실제 {fill_price:,}원")
+
+        position = await get_position(session, stock_code)
+        if position:
+            pnl = (fill_price - int(position.avg_price)) * qty
+            pnl_pct = (fill_price - position.avg_price) / position.avg_price
+            # 부분 체결 기록 (status="closed"로 일반 거래와 동일하게 집계)
+            trade = Trade(
+                stock_code=stock_code,
+                stock_name=position.stock_name,
+                status="closed",
+                entry_at=position.opened_at,
+                entry_price=int(position.avg_price),
+                entry_qty=qty,
+                exit_at=datetime.utcnow(),
+                exit_price=fill_price,
+                profit_loss=pnl,
+                profit_loss_pct=pnl_pct,
+                exit_reason=exit_reason,
+            )
+            await save_trade(session, trade)
+            # 포지션 수량만 차감 (삭제 X)
+            position.qty -= qty
+            await session.commit()
+
+        logger.info(f"Partial sell: {stock_code} x{qty} @ {fill_price:,} ({exit_reason})")
         return result, fill_price
 
 

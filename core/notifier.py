@@ -39,7 +39,7 @@ async def notify_buy(code: str, name: str, qty: int, price: int,
 async def notify_sell(code: str, name: str, qty: int, price: int,
                       reason: str, pnl: int) -> None:
     emoji = "✅" if pnl >= 0 else "🔴"
-    reason_kr = {"take_profit": "익절", "stop_loss": "손절"}.get(reason, reason)
+    reason_kr = {"take_profit": "익절", "stop_loss": "손절", "partial_take_profit": "절반 익절"}.get(reason, reason)
     text = (
         f"{emoji} <b>매도 체결 — {reason_kr}</b>\n"
         f"종목: {name} ({code})\n"
