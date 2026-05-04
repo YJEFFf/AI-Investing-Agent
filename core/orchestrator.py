@@ -212,11 +212,9 @@ class Orchestrator:
                 _, fill_price = await order_manager.execute_buy(
                     session, code, stock_name, qty, signal, current_price
                 )
-                # fill_price: 실제 KIS 체결가 (조회 실패 시 current_price fallback)
-                # stop/target을 fill_price 기준 비율로 재산출해 알림
-                price_ratio = fill_price / current_price if current_price > 0 else 1.0
-                notify_stop = round(signal.stop_price * price_ratio)
-                notify_target = round(signal.target_price * price_ratio) if signal.target_price > 0 else 0
+                # 텔레그램 알림: 실제 체결가 기준 stop/target (signal.stop_pct 직접 사용)
+                notify_stop = round(fill_price * (1 - signal.stop_pct))
+                notify_target = round(fill_price * (1 + signal.target_pct))
                 await notify_buy(
                     code, stock_name, qty, fill_price,
                     notify_target, notify_stop, signal.chart_confidence,

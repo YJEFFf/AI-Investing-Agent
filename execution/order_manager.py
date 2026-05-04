@@ -31,10 +31,11 @@ class OrderManager:
         if result.fill_price and result.fill_price != current_price:
             logger.info(f"체결가 반영: {stock_code} 추정가 {current_price:,} → 실제 {fill_price:,}원")
 
-        # 실제 체결가 기준으로 stop/target 재계산
-        stop_pct = (current_price - signal.stop_price) / current_price if current_price > 0 else 0.05
+        # LLM이 설정한 비율을 실제 체결가에 적용 (전날 종가 기준 왜곡 방지)
+        stop_pct = signal.stop_pct if signal.stop_pct > 0 else 0.05
+        target_pct = signal.target_pct if signal.target_pct > 0 else 0.08
         actual_stop = round(fill_price * (1 - stop_pct))
-        actual_target = round(fill_price * (signal.target_price / current_price)) if current_price > 0 else signal.target_price
+        actual_target = round(fill_price * (1 + target_pct))
         trail_pct = stop_pct
 
         position = Position(

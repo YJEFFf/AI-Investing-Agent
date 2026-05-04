@@ -14,6 +14,8 @@ class TradeSignal:
     target_price: float = 0.0
     chart_verdict: str = "skip"
     chart_confidence: float = 0.0
+    stop_pct: float = 0.05    # LLM이 설정한 손절 비율 (실제 체결가에 적용)
+    target_pct: float = 0.08  # LLM이 설정한 목표 비율 (실제 체결가에 적용)
 
 
 class DecisionAgent(BaseAgent):
