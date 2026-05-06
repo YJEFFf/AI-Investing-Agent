@@ -41,8 +41,8 @@ class MultiAgentStrategy:
         # 3. TA 복합 점수
         ta_score = compute_score(ta_result, current_price, regime)
 
-        # 4. TA 최소 필터 — 35점 미만이면 스킵 (이미지가 주 판단)
-        if ta_score < 35:
+        # 4. TA 최소 필터 — 25점 미만이면 스킵 (이미지가 주 판단)
+        if ta_score < 25:
             logger.debug(f"{stock_code} TA 점수 미달 ({ta_score:.1f}) → 스킵")
             return TradeSignal(
                 action="skip", position_ratio=0.0, stop_price=0.0,
@@ -92,7 +92,7 @@ class MultiAgentStrategy:
                 ta_score=ta_score, risk_level=risk_level,
             )
 
-        if chart_op.verdict == "buy" and chart_op.confidence >= 0.60:
+        if chart_op.verdict == "buy" and chart_op.confidence >= 0.50:
             # LLM 반환값 클램핑 (프롬프트 범위 벗어나는 경우 방어)
             stop_pct = max(0.02, min(float(chart_op.metadata.get("stop_pct", settings.swing_stop_pct)), 0.10))
             target_pct = max(0.03, min(float(chart_op.metadata.get("target_pct", 0.08)), 0.15))
