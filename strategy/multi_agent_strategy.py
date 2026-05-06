@@ -99,11 +99,14 @@ class MultiAgentStrategy:
             # stop/target은 전날 종가(current_price) 기준 잠정 계산 — 실제 체결 시 order_manager가 entry 기준으로 재계산
             stop_price = round(current_price * (1 - stop_pct))
             target_price = round(current_price * (1 + target_pct))
+            # confidence를 포지션 비율에 반영: 확신도 높을수록 더 크게 투자
+            # (confidence 0.50 → 50%, 0.70 → 70%, 1.0 → 100% of 리스크 한도)
+            conf_position_ratio = round(position_ratio * chart_op.confidence, 3)
             reasoning = f"차트:{chart_op.verdict}({chart_op.confidence:.2f}) | {chart_op.reasoning}"
-            logger.info(f"[{stock_code}] 최종 결정: buy | {reasoning}")
+            logger.info(f"[{stock_code}] 최종 결정: buy | ratio={conf_position_ratio:.2f} | {reasoning}")
             return TradeSignal(
                 action="buy",
-                position_ratio=position_ratio,
+                position_ratio=conf_position_ratio,
                 stop_price=stop_price,
                 stop_type="trailing",
                 reasoning=reasoning,
