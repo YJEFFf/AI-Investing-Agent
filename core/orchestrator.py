@@ -12,7 +12,7 @@ from kis.websocket_client import kis_ws, Tick
 from repository.database import AsyncSessionLocal
 from repository.models import Signal
 from repository.queries import (
-    get_open_positions, get_today_realized_pnl, get_win_rate_stats, save_signal,
+    get_open_positions, get_position, get_today_realized_pnl, get_win_rate_stats, save_signal,
     get_today_trade_count, get_today_signal_count,
 )
 from risk.portfolio_guard import portfolio_guard
@@ -293,56 +293,55 @@ class Orchestrator:
     async def _check_exit_conditions(self, code: str, current_price: int) -> None:
         """보유 포지션 익절/손절 체크 및 트레일링 스톱 업데이트"""
         async with AsyncSessionLocal() as session:
-            positions = await get_open_positions(session)
-            for pos in positions:
-                if pos.stock_code != code:
-                    continue
+            pos = await get_position(session, code)
+            if pos is None:
+                return
 
-                # 익절 체크 — 절반 먼저 매도, 나머지는 손익분기 trailing stop으로 유지
-                if pos.target_price and current_price >= pos.target_price:
-                    half_qty = pos.qty // 2
-                    if half_qty > 0 and pos.qty > 1:
-                        logger.info(f"절반 익절: {code} x{half_qty} @ {current_price} (목표가: {pos.target_price})")
-                        _, fill_price = await order_manager.execute_partial_sell(
-                            session, code, half_qty, current_price, "partial_take_profit"
-                        )
-                        pnl = (fill_price - int(pos.avg_price)) * half_qty
-                        await notify_sell(code, pos.stock_name, half_qty, fill_price, "partial_take_profit", pnl)
-                        # 나머지 절반: 손익분기(avg_price)로 stop 이동, target 제거
-                        pos.stop_price = int(pos.avg_price)
-                        pos.target_price = None
-                        await session.commit()
-                    else:
-                        # 1주만 보유 시 전량 익절
-                        logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
-                        _, fill_price = await order_manager.execute_sell(
-                            session, code, pos.qty, current_price, "take_profit"
-                        )
-                        pnl = (fill_price - int(pos.avg_price)) * pos.qty
-                        await notify_sell(code, pos.stock_name, pos.qty, fill_price, "take_profit", pnl)
-                    await self._refresh_balance()
-                    return
-
-                # 트레일링 스톱 업데이트
-                if pos.stop_type == "trailing":
-                    new_stop = update_trailing_stop(pos, current_price)
-                    updated_highest = max(pos.highest_price or 0, current_price)
-                    # stop이 바뀌거나 신고점 갱신 시 모두 커밋 (highest_price 항상 최신 유지)
-                    if new_stop != int(pos.stop_price) or updated_highest != (pos.highest_price or 0):
-                        pos.stop_price = new_stop
-                        pos.highest_price = updated_highest
-                        await session.commit()
-
-                # 손절 체크
-                if should_stop(pos, current_price):
-                    logger.info(f"손절 발동: {code} @ {current_price} (손절가: {pos.stop_price})")
+            # 익절 체크 — 절반 먼저 매도, 나머지는 손익분기 trailing stop으로 유지
+            if pos.target_price and current_price >= pos.target_price:
+                half_qty = pos.qty // 2
+                if half_qty > 0 and pos.qty > 1:
+                    logger.info(f"절반 익절: {code} x{half_qty} @ {current_price} (목표가: {pos.target_price})")
+                    _, fill_price = await order_manager.execute_partial_sell(
+                        session, code, half_qty, current_price, "partial_take_profit"
+                    )
+                    pnl = (fill_price - int(pos.avg_price)) * half_qty
+                    await notify_sell(code, pos.stock_name, half_qty, fill_price, "partial_take_profit", pnl)
+                    # 나머지 절반: 손익분기(avg_price)로 stop 이동, target 제거
+                    pos.stop_price = int(pos.avg_price)
+                    pos.target_price = None
+                    await session.commit()
+                else:
+                    # 1주만 보유 시 전량 익절
+                    logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
                     _, fill_price = await order_manager.execute_sell(
-                        session, code, pos.qty, current_price, "stop_loss"
+                        session, code, pos.qty, current_price, "take_profit"
                     )
                     pnl = (fill_price - int(pos.avg_price)) * pos.qty
-                    await notify_sell(code, pos.stock_name, pos.qty, fill_price, "stop_loss", pnl)
-                    await self._refresh_balance()
-                    return
+                    await notify_sell(code, pos.stock_name, pos.qty, fill_price, "take_profit", pnl)
+                await self._refresh_balance()
+                return
+
+            # 트레일링 스톱 업데이트
+            if pos.stop_type == "trailing":
+                new_stop = update_trailing_stop(pos, current_price)
+                updated_highest = max(pos.highest_price or 0, current_price)
+                # stop이 바뀌거나 신고점 갱신 시 모두 커밋 (highest_price 항상 최신 유지)
+                if new_stop != int(pos.stop_price) or updated_highest != (pos.highest_price or 0):
+                    pos.stop_price = new_stop
+                    pos.highest_price = updated_highest
+                    await session.commit()
+
+            # 손절 체크
+            if should_stop(pos, current_price):
+                logger.info(f"손절 발동: {code} @ {current_price} (손절가: {pos.stop_price})")
+                _, fill_price = await order_manager.execute_sell(
+                    session, code, pos.qty, current_price, "stop_loss"
+                )
+                pnl = (fill_price - int(pos.avg_price)) * pos.qty
+                await notify_sell(code, pos.stock_name, pos.qty, fill_price, "stop_loss", pnl)
+                await self._refresh_balance()
+                return
 
     async def _on_tick(self, tick: Tick) -> None:
         """WebSocket tick 수신 처리 (실전) — 익절/손절 체크"""

@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from pathlib import Path
 import pandas as pd
 
@@ -41,8 +42,12 @@ class OHLCVFetcher:
             return None
         try:
             df = pd.read_parquet(path)
-            # 당일 데이터가 있으면 유효한 캐시로 간주
             if df.empty:
+                return None
+            # 오늘 갱신된 캐시만 유효 — 어제 이전 캐시는 최신 봉 누락
+            cache_date = datetime.fromtimestamp(path.stat().st_mtime).date()
+            if cache_date < datetime.now().date():
+                logger.debug(f"캐시 만료 재조회: {path.name} (저장일: {cache_date})")
                 return None
             return df
         except Exception:
