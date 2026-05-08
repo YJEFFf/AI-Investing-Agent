@@ -39,8 +39,8 @@ _SYSTEM_PROMPT = """당신은 국내 주식 스윙 매매(2~10일 보유) 전문
 target_pct: 예상 목표 수익률 (5~12% 권장)
 stop_pct: 손절 비율 (3~6% 권장)
 confidence 기준:
-- 0.60 이상: 신호 존재 → buy
-- 0.60 미만: 신호 없음 → skip
+- 0.50 이상: 신호 존재 → buy
+- 0.50 미만: 신호 없음 → skip
 
 중요 — 갭 고려:
 실제 매수는 다음 영업일 시초가에 이루어집니다. 전날 종가 대비 ±5% 갭이 발생할 수 있습니다.
@@ -123,15 +123,9 @@ class ChartAnalystAgent(BaseAgent):
 
         except Exception as e:
             logger.warning(f"Chart agent LLM 호출 실패: {e}")
-            if ta_score >= 65:
-                return AgentOpinion(
-                    agent_name=self.name, verdict="buy", confidence=0.55,
-                    reasoning=f"LLM 실패 폴백 — TA 점수 {ta_score:.1f}",
-                    metadata={"target_pct": 0.07, "stop_pct": 0.05},
-                )
             return AgentOpinion(
-                agent_name=self.name, verdict="skip", confidence=0.3,
-                reasoning=f"LLM 실패: {e}",
+                agent_name=self.name, verdict="skip", confidence=0.0,
+                reasoning=f"LLM 호출 실패 — 매수 보류",
                 metadata={"target_pct": 0.0, "stop_pct": 0.0},
             )
 

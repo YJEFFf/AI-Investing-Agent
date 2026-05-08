@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kis.order import kis_order, OrderResult
 from repository.models import Trade, Position
-from repository.queries import save_trade, save_position, delete_position, get_position
+from repository.queries import save_trade, save_position, delete_position, get_position, get_open_trade
 from strategy.agents.decision_agent import TradeSignal
 
 logger = logging.getLogger(__name__)
@@ -89,20 +89,29 @@ class OrderManager:
         if position:
             pnl = (fill_price - int(position.avg_price)) * qty
             pnl_pct = (fill_price - position.avg_price) / position.avg_price
-            trade = Trade(
-                stock_code=stock_code,
-                stock_name=position.stock_name,
-                status="closed",
-                entry_at=position.opened_at,
-                entry_price=int(position.avg_price),
-                entry_qty=qty,
-                exit_at=datetime.utcnow(),
-                exit_price=fill_price,
-                profit_loss=pnl,
-                profit_loss_pct=pnl_pct,
-                exit_reason=exit_reason,
-            )
-            await save_trade(session, trade)
+            trade = await get_open_trade(session, stock_code)
+            if trade:
+                trade.status = "closed"
+                trade.exit_at = datetime.utcnow()
+                trade.exit_price = fill_price
+                trade.profit_loss = pnl
+                trade.profit_loss_pct = pnl_pct
+                trade.exit_reason = exit_reason
+                await session.commit()
+            else:
+                await save_trade(session, Trade(
+                    stock_code=stock_code,
+                    stock_name=position.stock_name,
+                    status="closed",
+                    entry_at=position.opened_at,
+                    entry_price=int(position.avg_price),
+                    entry_qty=qty,
+                    exit_at=datetime.utcnow(),
+                    exit_price=fill_price,
+                    profit_loss=pnl,
+                    profit_loss_pct=pnl_pct,
+                    exit_reason=exit_reason,
+                ))
             await delete_position(session, stock_code)
 
         logger.info(f"Sell executed: {stock_code} x{qty} @ {fill_price:,} ({exit_reason})")
@@ -130,8 +139,8 @@ class OrderManager:
         if position:
             pnl = (fill_price - int(position.avg_price)) * qty
             pnl_pct = (fill_price - position.avg_price) / position.avg_price
-            # 부분 체결 기록 (status="closed"로 일반 거래와 동일하게 집계)
-            trade = Trade(
+            # 부분 매도는 별도 closed 레코드로 기록 (원본 open 레코드는 최종 매도 시 업데이트)
+            await save_trade(session, Trade(
                 stock_code=stock_code,
                 stock_name=position.stock_name,
                 status="closed",
@@ -143,9 +152,7 @@ class OrderManager:
                 profit_loss=pnl,
                 profit_loss_pct=pnl_pct,
                 exit_reason=exit_reason,
-            )
-            await save_trade(session, trade)
-            # 포지션 수량만 차감 (삭제 X)
+            ))
             position.qty -= qty
             await session.commit()
 

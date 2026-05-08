@@ -13,7 +13,7 @@ from repository.database import AsyncSessionLocal
 from repository.models import Signal
 from repository.queries import (
     get_open_positions, get_position, get_today_realized_pnl, get_win_rate_stats, save_signal,
-    get_today_trade_count, get_today_signal_count,
+    get_today_trade_count, get_today_signal_count, get_today_sell_count,
 )
 from risk.portfolio_guard import portfolio_guard
 from risk.position_sizer import calc_position_size
@@ -23,7 +23,7 @@ from strategy.regime_detector import detect_regime, MarketRegime
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
-from core.notifier import notify_buy, notify_sell, notify_daily_summary
+from core.notifier import notify_buy, notify_sell, notify_daily_summary, notify_pre_market_summary
 from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -125,6 +125,17 @@ class Orchestrator:
         tasks = [_analyze_stock(s) for s in self._watchlist]
         await asyncio.gather(*tasks, return_exceptions=True)
         logger.info(f"장전 분석 완료: {len(self._pending_signals)}개 매수 신호")
+
+        signal_list = [
+            {
+                "code": code,
+                "name": next((s["name"] for s in self._watchlist if s["code"] == code), code),
+                "confidence": sig.chart_confidence or 0.0,
+                "reasoning": sig.reasoning[:60],
+            }
+            for code, sig in self._pending_signals.items()
+        ]
+        await notify_pre_market_summary(len(self._watchlist), signal_list)
 
     async def market_open(self) -> None:
         """09:00 장 시작"""
@@ -253,9 +264,11 @@ class Orchestrator:
             logger.info(f"오늘 실현 손익: {pnl:+,}원")
             signal_count = await get_today_signal_count(session)
             trade_count = await get_today_trade_count(session)
+            sell_count = await get_today_sell_count(session)
             await notify_daily_summary(
                 signals=signal_count,
                 trades=trade_count,
+                sells=sell_count,
                 pnl=pnl,
             )
 

@@ -49,11 +49,32 @@ async def notify_sell(code: str, name: str, qty: int, price: int,
     await _send(text)
 
 
-async def notify_daily_summary(signals: int, trades: int, pnl: int) -> None:
+async def notify_pre_market_summary(
+    total_scanned: int,
+    buy_signals: list[dict],
+) -> None:
+    if buy_signals:
+        lines = "\n".join(
+            f"  • {s['name']}({s['code']}) | confidence {s['confidence']:.2f}"
+            for s in buy_signals
+        )
+        text = (
+            f"🔍 <b>장전 분석 완료</b>\n"
+            f"스캔: {total_scanned}개 종목 → 매수 신호: {len(buy_signals)}개\n\n"
+            f"{lines}"
+        )
+    else:
+        text = (
+            f"🔍 <b>장전 분석 완료</b>\n"
+            f"스캔: {total_scanned}개 종목 → 매수 신호 없음"
+        )
+    await _send(text)
+
+
+async def notify_daily_summary(signals: int, trades: int, sells: int, pnl: int) -> None:
     text = (
         f"📊 <b>오늘 결과</b>\n"
-        f"매수 신호: {signals}개\n"
-        f"체결: {trades}건\n"
+        f"매수 신호: {signals}개 | 매수: {trades}건 | 매도: {sells}건\n"
         f"실현 손익: {pnl:+,}원"
     )
     await _send(text)

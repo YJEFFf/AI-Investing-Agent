@@ -29,6 +29,17 @@ async def delete_position(session: AsyncSession, stock_code: str) -> None:
         await session.commit()
 
 
+async def get_open_trade(session: AsyncSession, stock_code: str) -> Trade | None:
+    result = await session.execute(
+        select(Trade)
+        .where(Trade.stock_code == stock_code)
+        .where(Trade.status == "open")
+        .order_by(Trade.entry_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_recent_trades(session: AsyncSession, limit: int = 50) -> list[Trade]:
     result = await session.execute(
         select(Trade)
@@ -77,6 +88,16 @@ async def get_today_signal_count(session: AsyncSession) -> int:
     result = await session.execute(
         select(func.count(Signal.id))
         .where(func.date(Signal.created_at) == today)
+    )
+    return result.scalar() or 0
+
+
+async def get_today_sell_count(session: AsyncSession) -> int:
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(func.count(Trade.id))
+        .where(Trade.status == "closed")
+        .where(func.date(Trade.exit_at) == today)
     )
     return result.scalar() or 0
 
