@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     max_drawdown_pct: float = Field(default=0.15)
     daily_loss_cap: float = Field(default=0.05)
     max_open_positions: int = Field(default=7)
-    max_position_pct: float = Field(default=0.10)
+    max_position_pct: float = Field(default=0.25)
     default_stop_pct: float = Field(default=0.02)
     swing_stop_pct: float = Field(default=0.05)
 
