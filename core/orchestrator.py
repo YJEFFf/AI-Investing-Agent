@@ -331,12 +331,15 @@ class Orchestrator:
                     await session.commit()
                 else:
                     # 1주만 보유 시 전량 익절
+                    qty = pos.qty
+                    avg_price = int(pos.avg_price)
+                    stock_name = pos.stock_name
                     logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
                     _, fill_price = await order_manager.execute_sell(
-                        session, code, pos.qty, current_price, "take_profit"
+                        session, code, qty, current_price, "take_profit"
                     )
-                    pnl = (fill_price - int(pos.avg_price)) * pos.qty
-                    await notify_sell(code, pos.stock_name, pos.qty, fill_price, "take_profit", pnl)
+                    pnl = (fill_price - avg_price) * qty
+                    await notify_sell(code, stock_name, qty, fill_price, "take_profit", pnl)
                 await self._refresh_balance()
                 return
 
@@ -352,12 +355,15 @@ class Orchestrator:
 
             # 손절 체크
             if should_stop(pos, current_price):
+                qty = pos.qty
+                avg_price = int(pos.avg_price)
+                stock_name = pos.stock_name
                 logger.info(f"손절 발동: {code} @ {current_price} (손절가: {pos.stop_price})")
                 _, fill_price = await order_manager.execute_sell(
-                    session, code, pos.qty, current_price, "stop_loss"
+                    session, code, qty, current_price, "stop_loss"
                 )
-                pnl = (fill_price - int(pos.avg_price)) * pos.qty
-                await notify_sell(code, pos.stock_name, pos.qty, fill_price, "stop_loss", pnl)
+                pnl = (fill_price - avg_price) * qty
+                await notify_sell(code, stock_name, qty, fill_price, "stop_loss", pnl)
                 await self._refresh_balance()
                 return
 
@@ -399,6 +405,8 @@ class Orchestrator:
         finally:
             scheduler.shutdown()
             await kis_ws.stop()
+            from kis.rest_client import kis_client
+            await kis_client.close()
             logger.info("Orchestrator 종료")
 
 
