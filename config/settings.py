@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     max_position_pct: float = Field(default=0.25)
     default_stop_pct: float = Field(default=0.02)
     swing_stop_pct: float = Field(default=0.05)
+    partial_tp_trail_pct: float = Field(default=0.08)  # partial TP 후 trailing 비율 확대
 
     @property
     def is_paper(self) -> bool:

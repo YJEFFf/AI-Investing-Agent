@@ -324,8 +324,9 @@ class Orchestrator:
                     )
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", pnl)
-                    # 나머지 절반: 손익분기(avg_price)로 stop 이동, target 제거
+                    # 나머지 절반: 손익분기(avg_price)로 stop 이동, trailing 비율 확대, target 제거
                     pos.stop_price = avg_price
+                    pos.trail_pct = settings.partial_tp_trail_pct
                     pos.target_price = None
                     await session.commit()
                 else:
