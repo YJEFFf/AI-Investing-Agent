@@ -52,19 +52,21 @@ class KISOrder:
 
     async def _fetch_fill_price_from_balance(self, stock_code: str) -> int:
         """매수 직후 잔고 조회에서 매입평균단가를 체결가로 반환.
-        inquire-daily-ccld는 모의투자에서 데이터를 반환하지 않아 사용 불가."""
-        await asyncio.sleep(3)
-        try:
-            from kis.account import kis_account
-            positions = await kis_account.get_positions()
-            for p in positions:
-                if p["code"] == stock_code:
-                    price = int(p["avg_price"])
-                    if price > 0:
-                        logger.info(f"잔고 기준 체결가: {stock_code} → {price:,}원")
-                        return price
-        except Exception as e:
-            logger.debug(f"잔고 기준 체결가 조회 실패: {e}")
+        inquire-daily-ccld는 모의투자에서 데이터를 반환하지 않아 사용 불가.
+        장 시작 직후 잔고 반영 지연을 고려해 최대 3회 재시도."""
+        from kis.account import kis_account
+        for attempt in range(3):
+            await asyncio.sleep(3)
+            try:
+                positions = await kis_account.get_positions()
+                for p in positions:
+                    if p["code"] == stock_code:
+                        price = int(p["avg_price"])
+                        if price > 0:
+                            logger.info(f"잔고 기준 체결가: {stock_code} → {price:,}원 (시도 {attempt + 1})")
+                            return price
+            except Exception as e:
+                logger.debug(f"잔고 기준 체결가 조회 실패 (시도 {attempt + 1}): {e}")
         logger.warning(f"잔고 조회 체결가 실패 — 추정가 사용: {stock_code}")
         return 0
 

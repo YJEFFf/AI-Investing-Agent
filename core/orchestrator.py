@@ -314,14 +314,18 @@ class Orchestrator:
             if pos.target_price and current_price >= pos.target_price:
                 half_qty = pos.qty // 2
                 if half_qty > 0 and pos.qty > 1:
+                    # execute_partial_sell이 session.commit()을 호출하면 pos 속성이 expire됨
+                    # async 컨텍스트에서 재로드 불가하므로 commit 전에 미리 저장
+                    avg_price = int(pos.avg_price)
+                    stock_name = pos.stock_name
                     logger.info(f"절반 익절: {code} x{half_qty} @ {current_price} (목표가: {pos.target_price})")
                     _, fill_price = await order_manager.execute_partial_sell(
                         session, code, half_qty, current_price, "partial_take_profit"
                     )
-                    pnl = (fill_price - int(pos.avg_price)) * half_qty
-                    await notify_sell(code, pos.stock_name, half_qty, fill_price, "partial_take_profit", pnl)
+                    pnl = (fill_price - avg_price) * half_qty
+                    await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", pnl)
                     # 나머지 절반: 손익분기(avg_price)로 stop 이동, target 제거
-                    pos.stop_price = int(pos.avg_price)
+                    pos.stop_price = avg_price
                     pos.target_price = None
                     await session.commit()
                 else:
