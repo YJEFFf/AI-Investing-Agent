@@ -4,13 +4,10 @@ from sqlalchemy import text
 from config.settings import settings
 from repository.models import Base
 
-engine = create_async_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    echo=False,
-)
+_is_sqlite = settings.database_url.startswith("sqlite")
+_engine_kwargs = {} if _is_sqlite else {"pool_size": 5, "max_overflow": 10, "pool_pre_ping": True}
+
+engine = create_async_engine(settings.database_url, echo=False, **_engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
