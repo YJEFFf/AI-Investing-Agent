@@ -30,6 +30,7 @@ async def notify_buy(code: str, name: str, qty: int, price: int,
         f"📈 <b>매수 체결</b>\n"
         f"종목: {name} ({code})\n"
         f"수량: {qty:,}주 @ {price:,}원\n"
+        f"총 매수금액: {qty * price:,}원\n"
         f"목표가: {target_price:,}원 | 손절가: {stop_price:,}원\n"
         f"Confidence: {confidence:.2f}"
     )
