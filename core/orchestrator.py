@@ -12,11 +12,10 @@ from kis.websocket_client import kis_ws, Tick
 from repository.database import AsyncSessionLocal
 from repository.models import Signal
 from repository.queries import (
-    get_open_positions, get_position, get_today_realized_pnl, get_win_rate_stats, save_signal,
+    get_open_positions, get_position, get_today_realized_pnl, save_signal,
     get_today_trade_count, get_today_signal_count, get_today_sell_count,
 )
 from risk.portfolio_guard import portfolio_guard
-from risk.position_sizer import calc_position_size
 from risk.stop_loss import should_stop, update_trailing_stop
 from strategy.multi_agent_strategy import multi_agent_strategy
 from strategy.regime_detector import detect_regime, MarketRegime
@@ -179,6 +178,12 @@ class Orchestrator:
             today_pnl = await get_today_realized_pnl(session)
             daily_pnl_pct = today_pnl / balance["total_eval"] if balance["total_eval"] > 0 else 0.0
 
+            # 잔고를 매수 대상 종목 수로 균등 분할 (이미 보유 중인 종목 제외)
+            eligible_codes = [c for c in self._pending_signals if c not in already_held]
+            n = max(1, len(eligible_codes))
+            per_stock_budget = int(balance["available_cash"] / n)
+            logger.info(f"시드 균등 분할: {balance['available_cash']:,}원 ÷ {n}종목 = {per_stock_budget:,}원/종목")
+
             for code, signal in list(self._pending_signals.items()):
                 if code in already_held:
                     logger.debug(f"{code} 이미 보유 중 — 스킵")
@@ -198,18 +203,11 @@ class Orchestrator:
                     logger.warning(f"현재가 조회 실패 {code}: {e}")
                     continue
 
-                stats = await get_win_rate_stats(session)
-                qty = calc_position_size(
-                    available_cash=balance["available_cash"],
-                    current_price=current_price,
-                    position_ratio=signal.position_ratio,
-                    win_rate=stats["win_rate"],
-                    avg_win_pct=stats["avg_win_pct"],
-                    avg_loss_pct=stats["avg_loss_pct"],
-                )
+                # 시장가 주문 슬리피지 버퍼 5% 적용
+                qty = int(per_stock_budget * 0.95) // current_price
 
                 if qty <= 0:
-                    logger.info(f"매수 수량 0 → 스킵: {code} (잔고 {balance['available_cash']:,}원)")
+                    logger.info(f"매수 수량 0 → 스킵: {code} (예산 {per_stock_budget:,}원, 현재가 {current_price:,}원)")
                     continue
 
                 stock_name = next((s["name"] for s in self._watchlist if s["code"] == code), code)
