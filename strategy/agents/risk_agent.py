@@ -25,10 +25,7 @@ class RiskManagerAgent(BaseAgent):
 
         # 포지션 크기 권장
         if risk_flags:
-            if any(f in risk_flags for f in ["max_positions_reached", "daily_loss_cap_hit", "max_drawdown_hit"]):
-                position_ratio = 0.0  # 진입 불가
-            else:
-                position_ratio = 0.5  # 위험 존재 → 절반
+            position_ratio = 0.0  # 모든 risk_flag는 진입 불가 조건
         else:
             position_ratio = 1.0  # 정상
 
@@ -38,11 +35,6 @@ class RiskManagerAgent(BaseAgent):
             verdict = "sell"
             confidence = 0.9
             reasoning = f"진입 불가: {', '.join(risk_flags)}"
-        elif position_ratio == 0.5:
-            risk_level = "medium"
-            verdict = "neutral"
-            confidence = 0.6
-            reasoning = f"위험 감지 → 포지션 50% 축소: {', '.join(risk_flags)}"
         else:
             risk_level = "low"
             verdict = "buy"

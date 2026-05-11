@@ -86,6 +86,8 @@ class OrderManager:
             logger.info(f"체결가 반영: {stock_code} 추정가 {current_price:,} → 실제 {fill_price:,}원")
 
         position = await get_position(session, stock_code)
+        if position is None:
+            logger.warning(f"포지션 없음 — 매도 기록 누락: {stock_code}")
         if position:
             pnl = (fill_price - int(position.avg_price)) * qty
             pnl_pct = (fill_price - position.avg_price) / position.avg_price
@@ -136,6 +138,8 @@ class OrderManager:
             logger.info(f"체결가 반영: {stock_code} 추정가 {current_price:,} → 실제 {fill_price:,}원")
 
         position = await get_position(session, stock_code)
+        if position is None:
+            logger.warning(f"포지션 없음 — 부분매도 기록 누락: {stock_code}")
         if position:
             pnl = (fill_price - int(position.avg_price)) * qty
             pnl_pct = (fill_price - position.avg_price) / position.avg_price

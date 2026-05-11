@@ -153,9 +153,13 @@ class Orchestrator:
             logger.info("모의매매 모드 — 손절 폴링 시작")
             asyncio.create_task(self._polling_loop())
 
-        balance = await kis_account.get_balance()
-        self._cached_balance = balance
-        portfolio_guard.update_peak(balance["total_eval"])
+        try:
+            balance = await kis_account.get_balance()
+            self._cached_balance = balance
+            portfolio_guard.update_peak(balance["total_eval"])
+        except Exception as e:
+            logger.warning(f"장 시작 잔고 조회 실패 — 캐시 사용: {e}")
+            balance = self._cached_balance
 
         # 장전 매수 신호 실행
         if self._pending_signals:
