@@ -208,8 +208,9 @@ class Orchestrator:
                     continue
 
                 # 균등 예산과 실제 가용 잔고 중 작은 값으로 수량 계산 (이전 체결 후 잔고 감소 반영)
+                # 시가 매수 특성상 체결가가 추정가보다 높은 경우가 많으므로 7% 버퍼 적용
                 effective_budget = min(per_stock_budget, balance["available_cash"])
-                qty = int(effective_budget * 0.95) // current_price
+                qty = int(effective_budget * 0.93) // current_price
 
                 if qty <= 0:
                     logger.info(f"매수 수량 0 → 스킵: {code} (예산 {per_stock_budget:,}원, 현재가 {current_price:,}원)")
