@@ -12,8 +12,8 @@ from kis.websocket_client import kis_ws, Tick
 from repository.database import AsyncSessionLocal
 from repository.models import Signal
 from repository.queries import (
-    get_open_positions, get_position, get_today_realized_pnl, save_signal,
-    get_today_trade_count, get_today_signal_count, get_today_sell_count,
+    get_open_positions_by_market, get_position, get_today_realized_pnl_by_market, save_signal,
+    get_today_trade_count_by_market, get_today_signal_count_by_market, get_today_sell_count_by_market,
 )
 from risk.portfolio_guard import portfolio_guard
 from risk.stop_loss import should_stop, update_trailing_stop
@@ -95,8 +95,8 @@ class Orchestrator:
 
         # 실제 포지션/손익 조회
         async with AsyncSessionLocal() as session:
-            open_pos_count = len(await get_open_positions(session))
-            today_pnl = await get_today_realized_pnl(session)
+            open_pos_count = len(await get_open_positions_by_market(session, "KR"))
+            today_pnl = await get_today_realized_pnl_by_market(session, "KR")
         daily_pnl_pct = today_pnl / balance["total_eval"] if balance["total_eval"] > 0 else 0.0
 
         # 차트 이미지 분석 (최대 3개 동시)
@@ -175,11 +175,11 @@ class Orchestrator:
 
         async with AsyncSessionLocal() as session:
             balance = self._cached_balance
-            open_positions = await get_open_positions(session)
+            open_positions = await get_open_positions_by_market(session, "KR")
             open_pos_count = len(open_positions)
             already_held = {pos.stock_code for pos in open_positions}
 
-            today_pnl = await get_today_realized_pnl(session)
+            today_pnl = await get_today_realized_pnl_by_market(session, "KR")
             daily_pnl_pct = today_pnl / balance["total_eval"] if balance["total_eval"] > 0 else 0.0
 
             # 잔고를 매수 대상 종목 수로 균등 분할 (이미 보유 중인 종목 제외)
@@ -270,11 +270,11 @@ class Orchestrator:
             return
         logger.info("장 후 정산 중")
         async with AsyncSessionLocal() as session:
-            pnl = await get_today_realized_pnl(session)
+            pnl = await get_today_realized_pnl_by_market(session, "KR")
             logger.info(f"오늘 실현 손익: {pnl:+,}원")
-            signal_count = await get_today_signal_count(session)
-            trade_count = await get_today_trade_count(session)
-            sell_count = await get_today_sell_count(session)
+            signal_count = await get_today_signal_count_by_market(session, "KR")
+            trade_count = await get_today_trade_count_by_market(session, "KR")
+            sell_count = await get_today_sell_count_by_market(session, "KR")
             await notify_daily_summary(
                 signals=signal_count,
                 trades=trade_count,
@@ -301,7 +301,7 @@ class Orchestrator:
                 break
 
             async with AsyncSessionLocal() as session:
-                held_positions = await get_open_positions(session)
+                held_positions = await get_open_positions_by_market(session, "KR")
             held_codes = {pos.stock_code for pos in held_positions}
 
             tasks = [_check_with_sem(code) for code in held_codes]

@@ -102,6 +102,16 @@ async def get_today_sell_count(session: AsyncSession) -> int:
     return result.scalar() or 0
 
 
+async def get_today_signal_count_by_market(session: AsyncSession, market: str) -> int:
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(func.count(Signal.id))
+        .where(Signal.market == market)
+        .where(func.date(Signal.created_at) == today)
+    )
+    return result.scalar() or 0
+
+
 async def get_open_positions_by_market(session: AsyncSession, market: str) -> list[Position]:
     result = await session.execute(select(Position).where(Position.market == market))
     return result.scalars().all()
