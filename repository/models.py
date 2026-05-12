@@ -48,13 +48,13 @@ class Trade(Base):
     stock_name = Column(String(50))
     status = Column(String(10), default=TradeStatus.OPEN, nullable=False)
     entry_at = Column(DateTime, nullable=False)
-    entry_price = Column(Integer, nullable=False)
-    entry_qty = Column(Integer, nullable=False)
+    entry_price = Column(Float, nullable=False)   # KR: 원 정수, US: USD 소수점
+    entry_qty = Column(Float, nullable=False)     # KR: 정수, US: 소수점 수량
     exit_at = Column(DateTime)
-    exit_price = Column(Integer)
-    stop_price = Column(Integer)
+    exit_price = Column(Float)
+    stop_price = Column(Float)
     stop_type = Column(String(20))   # fixed | trailing | atr
-    profit_loss = Column(Integer)
+    profit_loss = Column(Float)
     profit_loss_pct = Column(Float)
     exit_reason = Column(String(50))  # stop_loss | take_profit | signal | emergency
     signal_id = Column(Integer)
@@ -68,7 +68,7 @@ class Position(Base):
     market = Column(String(2), default="KR", nullable=False)  # KR | US
     stock_code = Column(String(10), nullable=False, unique=True)
     stock_name = Column(String(50))
-    qty = Column(Integer, nullable=False)
+    qty = Column(Float, nullable=False)      # KR: 정수, US: 소수점 수량
     avg_price = Column(Float, nullable=False)
     stop_price = Column(Float, nullable=False)
     stop_type = Column(String(20), default="fixed")

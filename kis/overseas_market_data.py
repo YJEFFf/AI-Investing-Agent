@@ -33,8 +33,11 @@ class KISOverseasMarketData:
         """해외주식 일봉 OHLCV 조회 (USD). 최대 100행씩 페이지네이션."""
         all_rows: list[dict] = []
         end_date = datetime.now()
+        max_pages = (count // 100) + 2  # 100행씩 페이지네이션, 여유 2페이지
 
-        while len(all_rows) < count:
+        for _ in range(max_pages):
+            if len(all_rows) >= count:
+                break
             data = await kis_client.get(
                 "/uapi/overseas-price/v1/quotations/dailyprice",
                 tr_id="HHDFS76240000",
