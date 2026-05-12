@@ -358,16 +358,16 @@ class USOrchestrator:
         scheduler.start()
         logger.info("US 트레이딩 에이전트 시작")
 
-        # 장 중 재시작 시 즉시 복구 (KST 22:30~06:00)
-        now = datetime.now()
-        t = now.time()
-        if t >= dtime(22, 30) or t < dtime(6, 0):
-            if t >= dtime(22, 30):
-                logger.info("22:30 이후 시작 — pre_market_setup 즉시 실행")
-                await self.pre_market_setup()
-            if t >= dtime(23, 30) or t < dtime(6, 0):
-                logger.info("23:30 이후 시작 — market_open 즉시 실행")
-                await self.market_open()
+        # 장 중 재시작 시 즉시 복구 (NY 기준 08:30~16:00)
+        from zoneinfo import ZoneInfo
+        now_ny = datetime.now(ZoneInfo("America/New_York"))
+        t_ny = now_ny.time()
+        if dtime(8, 30) <= t_ny < dtime(16, 0):
+            logger.info("NY 08:30~16:00 사이 시작 — pre_market_setup 즉시 실행")
+            await self.pre_market_setup()
+        if dtime(9, 30) <= t_ny < dtime(16, 0):
+            logger.info("NY 09:30~16:00 사이 시작 — market_open 즉시 실행")
+            await self.market_open()
 
         try:
             while True:
