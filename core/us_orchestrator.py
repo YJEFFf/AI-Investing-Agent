@@ -16,7 +16,7 @@ from repository.queries import (
     save_signal, get_today_trade_count_by_market, get_today_sell_count_by_market,
 )
 from risk.portfolio_guard import PortfolioGuard
-from risk.stop_loss import should_stop, update_trailing_stop
+from risk.stop_loss import should_stop
 from strategy.multi_agent_strategy import multi_agent_strategy
 from strategy.regime_detector import detect_regime, MarketRegime
 from execution.us_order_manager import us_order_manager
@@ -68,6 +68,10 @@ class USOrchestrator:
         except Exception as e:
             logger.warning(f"US 잔고 조회 실패 — 캐시 사용: {e}")
             balance = self._cached_balance
+
+        if balance.get("available_usd", 0) < 1.0:
+            logger.info(f"US 가용 잔고 없음 (${balance.get('available_usd', 0):.2f}) — 분석 스킵")
+            return
 
         self._watchlist = self._load_watchlist()
         logger.info(f"US 워치리스트: {len(self._watchlist)}개 종목")
@@ -223,11 +227,8 @@ class USOrchestrator:
                 notify_target = round(fill_price * (1 + signal.target_pct), 4)
                 await notify_us_buy(ticker, name, qty, fill_price, notify_target, notify_stop, signal.chart_confidence)
                 open_pos_count += 1
-                try:
-                    self._cached_balance = await overseas_account.get_balance()
-                    balance = self._cached_balance
-                except Exception:
-                    pass
+                await self._refresh_balance()
+                balance = self._cached_balance
 
         self._pending_signals.clear()
 
@@ -254,6 +255,12 @@ class USOrchestrator:
             sells=sells,
             pnl=pnl,
         )
+
+    async def _refresh_balance(self) -> None:
+        try:
+            self._cached_balance = await overseas_account.get_balance()
+        except Exception as e:
+            logger.warning(f"US 잔고 갱신 실패 — 캐시 유지: {e}")
 
     async def _polling_loop(self) -> None:
         """1분마다 보유 종목 손절/익절 체크."""
@@ -308,16 +315,20 @@ class USOrchestrator:
                     )
                     pnl = (fill_price - avg_price) * qty
                     await notify_us_sell(ticker, name, qty, fill_price, "take_profit", pnl)
-                try:
-                    self._cached_balance = await overseas_account.get_balance()
-                except Exception:
-                    pass
+                await self._refresh_balance()
                 return
 
-            # 트레일링 스톱 업데이트
-            updated = update_trailing_stop(pos, current_price)
-            if updated:
-                await session.commit()
+            # 트레일링 스톱 업데이트 (USD 소수점 유지)
+            if pos.stop_type == "trailing":
+                pct = float(pos.trail_pct) if pos.trail_pct and pos.trail_pct > 0 else 0.05
+                updated_highest = max(float(pos.highest_price or pos.avg_price), current_price)
+                new_stop = round(updated_highest * (1 - pct), 4)
+                cur_stop = float(pos.stop_price)
+                new_stop = max(cur_stop, new_stop)  # 절대 내려가지 않음
+                if new_stop != cur_stop or updated_highest != float(pos.highest_price or 0):
+                    pos.stop_price = new_stop
+                    pos.highest_price = updated_highest
+                    await session.commit()
 
             # 손절 체크
             if should_stop(pos, current_price):
@@ -330,16 +341,29 @@ class USOrchestrator:
                 )
                 pnl = (fill_price - avg_price) * qty
                 await notify_us_sell(ticker, name, qty, fill_price, "stop_loss", pnl)
-                try:
-                    self._cached_balance = await overseas_account.get_balance()
-                except Exception:
-                    pass
+                await self._refresh_balance()
 
     async def run(self) -> None:
         from core.us_scheduler import create_us_scheduler
+        from repository.database import init_db
+        from datetime import time as dtime
+
+        await init_db()
         scheduler = create_us_scheduler(self)
         scheduler.start()
         logger.info("US 트레이딩 에이전트 시작")
+
+        # 장 중 재시작 시 즉시 복구 (KST 22:30~06:00)
+        now = datetime.now()
+        t = now.time()
+        if t >= dtime(22, 30) or t < dtime(6, 0):
+            if t >= dtime(22, 30):
+                logger.info("22:30 이후 시작 — pre_market_setup 즉시 실행")
+                await self.pre_market_setup()
+            if t >= dtime(23, 30) or t < dtime(6, 0):
+                logger.info("23:30 이후 시작 — market_open 즉시 실행")
+                await self.market_open()
+
         try:
             while True:
                 await asyncio.sleep(3600)

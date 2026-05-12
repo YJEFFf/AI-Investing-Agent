@@ -59,6 +59,10 @@ class Orchestrator:
             logger.warning(f"장전 잔고 조회 실패 — 캐시 사용: {e}")
             balance = self._cached_balance
 
+        if balance.get("available_cash", 0) < 100_000:
+            logger.info(f"가용 잔고 부족 ({balance.get('available_cash', 0):,}원) — 분석 스킵")
+            return
+
         drawdown_pct = portfolio_guard.get_drawdown_pct(balance["total_eval"])
 
         self._kospi_df = await fetcher.fetch_kospi(250)
