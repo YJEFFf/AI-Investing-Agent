@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     max_open_positions: int = Field(default=7)
     max_position_pct: float = Field(default=0.25)
     default_stop_pct: float = Field(default=0.02)
-    swing_stop_pct: float = Field(default=0.05)
+    swing_stop_pct: float = Field(default=0.05)       # KR 폴백 손절 비율
+    us_swing_stop_pct: float = Field(default=0.08)    # US 폴백 손절 비율 (일간 변동폭 감안)
     partial_tp_trail_pct: float = Field(default=0.08)  # partial TP 후 trailing 비율 확대
 
     @property

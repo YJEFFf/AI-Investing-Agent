@@ -94,7 +94,8 @@ class MultiAgentStrategy:
 
         if chart_op.verdict == "buy" and chart_op.confidence >= 0.50:
             # LLM 반환값 클램핑 (프롬프트 범위 벗어나는 경우 방어)
-            stop_pct = max(0.02, min(float(chart_op.metadata.get("stop_pct", settings.swing_stop_pct)), 0.10))
+            _fallback_stop = settings.us_swing_stop_pct if not stock_code.isdigit() else settings.swing_stop_pct
+            stop_pct = max(0.02, min(float(chart_op.metadata.get("stop_pct", _fallback_stop)), 0.12))
             target_pct = max(0.03, min(float(chart_op.metadata.get("target_pct", 0.08)), 0.15))
             # stop/target은 전날 종가(current_price) 기준 잠정 계산 — 실제 체결 시 order_manager가 entry 기준으로 재계산
             stop_price = round(current_price * (1 - stop_pct))
