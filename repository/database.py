@@ -24,10 +24,10 @@ async def init_db() -> None:
 async def migrate_db() -> None:
     """스키마 변경 사항을 기존 DB에 반영"""
     migrations = [
-        "ALTER TABLE positions ADD COLUMN IF NOT EXISTS target_price FLOAT",
-        "ALTER TABLE positions ADD COLUMN IF NOT EXISTS trail_pct FLOAT",
-        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS chart_verdict VARCHAR(10)",
-        "ALTER TABLE signals ADD COLUMN IF NOT EXISTS chart_confidence FLOAT",
+        "ALTER TABLE positions ADD COLUMN target_price FLOAT",
+        "ALTER TABLE positions ADD COLUMN trail_pct FLOAT",
+        "ALTER TABLE signals ADD COLUMN chart_verdict VARCHAR(10)",
+        "ALTER TABLE signals ADD COLUMN chart_confidence FLOAT",
     ]
     async with engine.begin() as conn:
         for sql in migrations:

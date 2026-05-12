@@ -74,9 +74,11 @@ class ChartAnalystAgent(BaseAgent):
             png_bytes = render_daily_chart(ohlcv_df, stock_name, stock_code)
             b64_data = base64.standard_b64encode(png_bytes).decode("utf-8")
 
+            is_us = not stock_code.isdigit()
+            price_str = f"${current_price:,.2f}" if is_us else f"{current_price:,.0f}원"
             text_ctx = (
                 f"종목: {stock_name} ({stock_code})\n"
-                f"현재가: {current_price:,.0f}원\n"
+                f"현재가: {price_str}\n"
                 f"시장 레짐: {regime.value}\n"
                 f"TA 종합 점수: {ta_score:.1f}/100\n\n"
                 f"위 일봉 차트를 보고 스윙 매매 관점에서 판단해 주세요."

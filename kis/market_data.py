@@ -35,8 +35,11 @@ class KISMarketData:
         end_dt = datetime.now()
         # count일치 거래일을 커버하려면 달력일 기준 약 1.5배 필요
         start_dt = end_dt - timedelta(days=int(count * 1.5) + 30)
+        max_pages = (count // 100) + 2
 
-        while len(all_rows) < count:
+        for _ in range(max_pages):
+            if len(all_rows) >= count:
+                break
             data = await kis_client.get(
                 "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
                 tr_id="FHKST03010100",
@@ -89,8 +92,11 @@ class KISMarketData:
         all_rows = []
         end_dt = datetime.now()
         start_dt = end_dt - timedelta(days=int(count * 1.5) + 30)
+        max_pages = (count // 100) + 2
 
-        while len(all_rows) < count:
+        for _ in range(max_pages):
+            if len(all_rows) >= count:
+                break
             data = await kis_client.get(
                 "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice",
                 tr_id="FHKUP03500100",
