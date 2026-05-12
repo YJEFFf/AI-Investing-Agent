@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     # Telegram — 한국장
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
-    # Telegram — 미국장 (같은 봇, 별도 채팅방)
+    # Telegram — 미국장 (별도 봇 + 별도 채팅방)
+    telegram_us_bot_token: str = ""
     telegram_us_chat_id: str = ""
 
     # Database

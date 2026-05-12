@@ -10,10 +10,10 @@ _BASE_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 async def _send(text: str) -> None:
-    if not settings.telegram_bot_token or not settings.telegram_us_chat_id:
+    if not settings.telegram_us_bot_token or not settings.telegram_us_chat_id:
         return
     try:
-        url = _BASE_URL.format(token=settings.telegram_bot_token)
+        url = _BASE_URL.format(token=settings.telegram_us_bot_token)
         async with httpx.AsyncClient(timeout=5) as client:
             await client.post(url, json={
                 "chat_id": settings.telegram_us_chat_id,
