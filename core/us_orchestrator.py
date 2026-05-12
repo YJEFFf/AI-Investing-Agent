@@ -200,8 +200,9 @@ class USOrchestrator:
                     logger.warning(f"US 현재가 조회 실패 {ticker}: {e}")
                     continue
 
-                # 소수점 수량 계산 (슬리피지 0.5%)
-                qty = round((per_stock_usd * 0.995) / current_price, 4)
+                # 균등 예산과 실제 가용 잔고 중 작은 값으로 수량 계산 (이전 체결 후 잔고 감소 반영)
+                effective_usd = min(per_stock_usd, balance["available_usd"])
+                qty = round((effective_usd * 0.995) / current_price, 4)
                 if qty <= 0.0001:
                     logger.info(f"US 매수 수량 너무 작음 → 스킵: {ticker}")
                     continue
