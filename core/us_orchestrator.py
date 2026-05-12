@@ -362,8 +362,8 @@ class USOrchestrator:
         from zoneinfo import ZoneInfo
         now_ny = datetime.now(ZoneInfo("America/New_York"))
         t_ny = now_ny.time()
-        if dtime(8, 30) <= t_ny < dtime(16, 0):
-            logger.info("NY 08:30~16:00 사이 시작 — pre_market_setup 즉시 실행")
+        if dtime(9, 0) <= t_ny < dtime(16, 0):
+            logger.info("NY 09:00~16:00 사이 시작 — pre_market_setup 즉시 실행")
             await self.pre_market_setup()
         if dtime(9, 30) <= t_ny < dtime(16, 0):
             logger.info("NY 09:30~16:00 사이 시작 — market_open 즉시 실행")

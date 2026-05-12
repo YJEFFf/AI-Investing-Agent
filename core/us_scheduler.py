@@ -19,10 +19,10 @@ def create_us_scheduler(orchestrator) -> AsyncIOScheduler:
         CronTrigger(day_of_week="mon", hour=8, minute=0, timezone="America/New_York"),
         id="us_watchlist_update",
     )
-    # 장전 분석 — 월~금 08:30 NY (장 시작 1시간 전)
+    # 장전 분석 — 월~금 09:00 NY (장 시작 30분 전)
     scheduler.add_job(
         orchestrator.pre_market_setup,
-        CronTrigger(hour=8, minute=30, day_of_week="mon-fri", timezone="America/New_York"),
+        CronTrigger(hour=9, minute=0, day_of_week="mon-fri", timezone="America/New_York"),
         id="us_pre_market_setup",
     )
     # 장 시작 — 월~금 09:30 NY
