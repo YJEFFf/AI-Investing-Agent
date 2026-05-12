@@ -226,10 +226,12 @@ class Orchestrator:
                     reasoning=signal.reasoning,
                 )
                 await save_signal(session, signal_record)
-                _, fill_price = await order_manager.execute_buy(
+                result, fill_price = await order_manager.execute_buy(
                     session, code, stock_name, qty, signal, current_price
                 )
-                # 텔레그램 알림: 실제 체결가 기준 stop/target (signal.stop_pct 직접 사용)
+                if not result.success:
+                    logger.warning(f"매수 실패 — 텔레그램 알림 생략: {code}")
+                    continue
                 notify_stop = round(fill_price * (1 - signal.stop_pct))
                 notify_target = round(fill_price * (1 + signal.target_pct))
                 await notify_buy(

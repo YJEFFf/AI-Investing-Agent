@@ -220,9 +220,12 @@ class USOrchestrator:
                 )
                 await save_signal(session, signal_record)
 
-                _, fill_price = await us_order_manager.execute_buy(
+                result, fill_price = await us_order_manager.execute_buy(
                     session, ticker, name, qty, signal, current_price
                 )
+                if not result.success:
+                    logger.warning(f"US 매수 실패 — 텔레그램 알림 생략: {ticker}")
+                    continue
                 notify_stop = round(fill_price * (1 - signal.stop_pct), 4)
                 notify_target = round(fill_price * (1 + signal.target_pct), 4)
                 await notify_us_buy(ticker, name, qty, fill_price, notify_target, notify_stop, signal.chart_confidence)
