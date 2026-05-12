@@ -8,6 +8,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/trading_agent
 ExecStart=/home/ubuntu/trading_agent/.venv/bin/python scripts/run_us_live.py
+Environment=KIS_ENV=prod
 Restart=on-failure
 RestartSec=30
 StandardOutput=journal
