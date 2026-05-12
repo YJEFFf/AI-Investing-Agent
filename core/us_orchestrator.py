@@ -14,6 +14,7 @@ from repository.models import Signal
 from repository.queries import (
     get_open_positions_by_market, get_position, get_today_realized_pnl_by_market,
     save_signal, get_today_trade_count_by_market, get_today_sell_count_by_market,
+    get_today_signal_count_by_market,
 )
 from risk.portfolio_guard import PortfolioGuard
 from risk.stop_loss import should_stop
@@ -251,11 +252,12 @@ class USOrchestrator:
             return
         async with AsyncSessionLocal() as session:
             pnl = await get_today_realized_pnl_by_market(session, "US")
+            signal_count = await get_today_signal_count_by_market(session, "US")
             trades = await get_today_trade_count_by_market(session, "US")
             sells = await get_today_sell_count_by_market(session, "US")
         logger.info(f"US 오늘 실현 손익: ${pnl:+.2f}")
         await notify_us_daily_summary(
-            signals=len(self._pending_signals),
+            signals=signal_count,
             trades=trades,
             sells=sells,
             pnl=pnl,
