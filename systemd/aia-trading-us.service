@@ -1,0 +1,21 @@
+[Unit]
+Description=AIA US Trading Agent
+After=network.target aia-trading.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/trading_agent
+ExecStart=/home/ubuntu/trading_agent/.venv/bin/python scripts/run_us_live.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aia-trading-us
+
+# 메모리 제한 (한국장 서비스와 공존)
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

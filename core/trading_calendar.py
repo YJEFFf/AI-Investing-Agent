@@ -8,6 +8,8 @@ _KR_HOLIDAYS = holidays.country_holidays("KR")
 for _year in range(2024, 2035):
     _KR_HOLIDAYS[date(_year, 5, 1)] = "근로자의 날"
 
+_US_HOLIDAYS = holidays.country_holidays("US", subdiv="NY")  # NYSE 기준
+
 
 def is_trading_day(d: date | None = None) -> bool:
     if d is None:
@@ -15,3 +17,12 @@ def is_trading_day(d: date | None = None) -> bool:
     if d.weekday() >= 5:
         return False
     return d not in _KR_HOLIDAYS
+
+
+def is_us_trading_day(d: date | None = None) -> bool:
+    """NYSE 기준 미국 거래일 여부 (KST 기준 날짜 입력)."""
+    if d is None:
+        d = date.today()
+    if d.weekday() >= 5:
+        return False
+    return d not in _US_HOLIDAYS

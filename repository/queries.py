@@ -102,6 +102,43 @@ async def get_today_sell_count(session: AsyncSession) -> int:
     return result.scalar() or 0
 
 
+async def get_open_positions_by_market(session: AsyncSession, market: str) -> list[Position]:
+    result = await session.execute(select(Position).where(Position.market == market))
+    return result.scalars().all()
+
+
+async def get_today_realized_pnl_by_market(session: AsyncSession, market: str) -> float:
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(func.sum(Trade.profit_loss))
+        .where(Trade.market == market)
+        .where(Trade.status == "closed")
+        .where(func.date(Trade.exit_at) == today)
+    )
+    return float(result.scalar() or 0)
+
+
+async def get_today_trade_count_by_market(session: AsyncSession, market: str) -> int:
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(func.count(Trade.id))
+        .where(Trade.market == market)
+        .where(func.date(Trade.entry_at) == today)
+    )
+    return result.scalar() or 0
+
+
+async def get_today_sell_count_by_market(session: AsyncSession, market: str) -> int:
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(func.count(Trade.id))
+        .where(Trade.market == market)
+        .where(Trade.status == "closed")
+        .where(func.date(Trade.exit_at) == today)
+    )
+    return result.scalar() or 0
+
+
 async def get_win_rate_stats(session: AsyncSession, limit: int = 50) -> dict:
     """최근 N거래 승률 및 평균 수익/손실 (포지션 사이징용)"""
     trades = await get_recent_trades(session, limit)

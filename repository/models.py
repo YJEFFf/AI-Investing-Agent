@@ -26,6 +26,7 @@ class Signal(Base):
     __tablename__ = "signals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    market = Column(String(2), default="KR", nullable=False)  # KR | US
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     stock_code = Column(String(10), nullable=False)
     ta_score = Column(Float, nullable=False)
@@ -42,6 +43,7 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    market = Column(String(2), default="KR", nullable=False)  # KR | US
     stock_code = Column(String(10), nullable=False)
     stock_name = Column(String(50))
     status = Column(String(10), default=TradeStatus.OPEN, nullable=False)
@@ -63,6 +65,7 @@ class Position(Base):
     __tablename__ = "positions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    market = Column(String(2), default="KR", nullable=False)  # KR | US
     stock_code = Column(String(10), nullable=False, unique=True)
     stock_name = Column(String(50))
     qty = Column(Integer, nullable=False)

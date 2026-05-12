@@ -18,9 +18,11 @@ class Settings(BaseSettings):
     # Anthropic
     anthropic_api_key: str
 
-    # Telegram
+    # Telegram — 한국장
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    # Telegram — 미국장 (같은 봇, 별도 채팅방)
+    telegram_us_chat_id: str = ""
 
     # Database
     database_url: str = "mysql+aiomysql://root:password@localhost:3306/trading"
