@@ -80,7 +80,7 @@ class KISOrder:
             "ORGN_ODNO": order_no,
             "ORD_DVSN": "02",
             "RVSE_CNCL_DVSN_CD": "02",
-            "ORD_QTY": str(qty),
+            "ORD_QTY": str(int(qty)),
             "ORD_UNPR": "0",
             "QTY_ALL_ORD_YN": "Y",
         }
@@ -118,8 +118,8 @@ class KISOrder:
             "ACNT_PRDT_CD": acnt_prdt_cd,
             "PDNO": stock_code,
             "ORD_DVSN": ord_dvsn,  # 00=지정가, 01=시장가
-            "ORD_QTY": str(qty),
-            "ORD_UNPR": str(price),
+            "ORD_QTY": str(int(qty)),
+            "ORD_UNPR": str(int(price)),
         }
         try:
             data = await kis_client.post(
