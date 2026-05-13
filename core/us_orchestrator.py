@@ -42,6 +42,7 @@ class USOrchestrator:
         self._nasdaq_df: pd.DataFrame | None = None
         self._cached_balance: dict = {"available_usd": 0.0, "total_eval_usd": 0.0}
         self._portfolio_guard = PortfolioGuard()
+        self._sell_locked: set[str] = set()                    # 매도 실패 종목 — 장 마감까지 재시도 차단
 
     def _load_watchlist(self) -> list[dict]:
         with open(_WATCHLIST_PATH) as f:
@@ -245,6 +246,7 @@ class USOrchestrator:
         logger.info("US 장 종료")
         self._trading_active = False
         self._pending_signals.clear()
+        self._sell_locked.clear()
 
     async def post_market(self) -> None:
         """06:15 KST — 일일 결산."""
@@ -292,6 +294,9 @@ class USOrchestrator:
 
     async def _check_exit_conditions(self, ticker: str, current_price: float) -> None:
         """USD 기준 익절/손절 체크 및 트레일링 스톱 업데이트."""
+        if ticker in self._sell_locked:
+            return
+
         async with AsyncSessionLocal() as session:
             pos = await get_position(session, ticker)
             if pos is None:
@@ -305,9 +310,13 @@ class USOrchestrator:
 
                 if half_qty > 0.0001 and float(pos.qty) > 0.0002:
                     logger.info(f"US 절반 익절: {ticker} x{half_qty:.4f} @ ${current_price:.2f}")
-                    _, fill_price = await us_order_manager.execute_partial_sell(
+                    result, fill_price = await us_order_manager.execute_partial_sell(
                         session, ticker, half_qty, current_price, "partial_take_profit"
                     )
+                    if not result.success:
+                        logger.warning(f"US 절반 익절 주문 실패 — 장 마감까지 재시도 차단: {ticker}")
+                        self._sell_locked.add(ticker)
+                        return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_us_sell(ticker, name, half_qty, fill_price, "partial_take_profit", pnl)
                     pos.stop_price = avg_price
@@ -317,9 +326,13 @@ class USOrchestrator:
                 else:
                     qty = float(pos.qty)
                     logger.info(f"US 전량 익절: {ticker} @ ${current_price:.2f}")
-                    _, fill_price = await us_order_manager.execute_sell(
+                    result, fill_price = await us_order_manager.execute_sell(
                         session, ticker, qty, current_price, "take_profit"
                     )
+                    if not result.success:
+                        logger.warning(f"US 익절 주문 실패 — 장 마감까지 재시도 차단: {ticker}")
+                        self._sell_locked.add(ticker)
+                        return
                     pnl = (fill_price - avg_price) * qty
                     await notify_us_sell(ticker, name, qty, fill_price, "take_profit", pnl)
                 await self._refresh_balance()
@@ -343,9 +356,13 @@ class USOrchestrator:
                 avg_price = float(pos.avg_price)
                 name = pos.stock_name or ticker
                 logger.info(f"US 손절: {ticker} @ ${current_price:.2f} (stop=${float(pos.stop_price):.2f})")
-                _, fill_price = await us_order_manager.execute_sell(
+                result, fill_price = await us_order_manager.execute_sell(
                     session, ticker, qty, current_price, "stop_loss"
                 )
+                if not result.success:
+                    logger.warning(f"US 손절 주문 실패 — 장 마감까지 재시도 차단: {ticker}")
+                    self._sell_locked.add(ticker)
+                    return
                 pnl = (fill_price - avg_price) * qty
                 await notify_us_sell(ticker, name, qty, fill_price, "stop_loss", pnl)
                 await self._refresh_balance()

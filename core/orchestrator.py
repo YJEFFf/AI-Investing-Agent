@@ -38,6 +38,7 @@ class Orchestrator:
         self._watchlist: list[dict] = []
         self._kospi_df = None
         self._cached_balance: dict = {"available_cash": 0, "total_eval": 0, "unrealized_pnl": 0}
+        self._sell_locked: set[str] = set()                    # 매도 실패 종목 — 장 마감까지 재시도 차단
 
     def _load_watchlist_config(self) -> dict:
         with open(_WATCHLIST_PATH) as f:
@@ -255,6 +256,7 @@ class Orchestrator:
         self._trading_active = False
         await kis_ws.stop()
         self._pending_signals.clear()
+        self._sell_locked.clear()
 
     async def pre_close(self) -> None:
         """15:20 장마감 전 스윙 포지션 점검"""
@@ -315,6 +317,9 @@ class Orchestrator:
 
     async def _check_exit_conditions(self, code: str, current_price: int) -> None:
         """보유 포지션 익절/손절 체크 및 트레일링 스톱 업데이트"""
+        if code in self._sell_locked:
+            return
+
         async with AsyncSessionLocal() as session:
             pos = await get_position(session, code)
             if pos is None:
@@ -329,9 +334,13 @@ class Orchestrator:
                     avg_price = int(pos.avg_price)
                     stock_name = pos.stock_name
                     logger.info(f"절반 익절: {code} x{half_qty} @ {current_price} (목표가: {pos.target_price})")
-                    _, fill_price = await order_manager.execute_partial_sell(
+                    result, fill_price = await order_manager.execute_partial_sell(
                         session, code, half_qty, current_price, "partial_take_profit"
                     )
+                    if not result.success:
+                        logger.warning(f"절반 익절 주문 실패 — 장 마감까지 재시도 차단: {code}")
+                        self._sell_locked.add(code)
+                        return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", pnl)
                     # 나머지 절반: 손익분기(avg_price)로 stop 이동, trailing 비율 확대, target 제거
@@ -345,9 +354,13 @@ class Orchestrator:
                     avg_price = int(pos.avg_price)
                     stock_name = pos.stock_name
                     logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
-                    _, fill_price = await order_manager.execute_sell(
+                    result, fill_price = await order_manager.execute_sell(
                         session, code, qty, current_price, "take_profit"
                     )
+                    if not result.success:
+                        logger.warning(f"익절 주문 실패 — 장 마감까지 재시도 차단: {code}")
+                        self._sell_locked.add(code)
+                        return
                     pnl = (fill_price - avg_price) * qty
                     await notify_sell(code, stock_name, qty, fill_price, "take_profit", pnl)
                 await self._refresh_balance()
@@ -369,9 +382,13 @@ class Orchestrator:
                 avg_price = int(pos.avg_price)
                 stock_name = pos.stock_name
                 logger.info(f"손절 발동: {code} @ {current_price} (손절가: {pos.stop_price})")
-                _, fill_price = await order_manager.execute_sell(
+                result, fill_price = await order_manager.execute_sell(
                     session, code, qty, current_price, "stop_loss"
                 )
+                if not result.success:
+                    logger.warning(f"손절 주문 실패 — 장 마감까지 재시도 차단: {code}")
+                    self._sell_locked.add(code)
+                    return
                 pnl = (fill_price - avg_price) * qty
                 await notify_sell(code, stock_name, qty, fill_price, "stop_loss", pnl)
                 await self._refresh_balance()
