@@ -115,7 +115,7 @@ class ChartAnalystAgent(BaseAgent):
             return AgentOpinion(
                 agent_name=self.name,
                 verdict=data.get("verdict", "skip"),
-                confidence=float(data.get("confidence", 0.5)),
+                confidence=min(1.0, max(0.0, float(data.get("confidence", 0.5)))),
                 reasoning=data.get("reasoning", ""),
                 metadata={
                     "target_pct": float(data.get("target_pct", 0.07)),

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,7 +51,7 @@ async def get_recent_trades(session: AsyncSession, limit: int = 50) -> list[Trad
 
 
 async def get_today_realized_pnl(session: AsyncSession) -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = await session.execute(
         select(func.sum(Trade.profit_loss))
         .where(Trade.status == "closed")
@@ -75,7 +75,7 @@ async def save_trade(session: AsyncSession, trade: Trade) -> Trade:
 
 
 async def get_today_trade_count(session: AsyncSession) -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = await session.execute(
         select(func.count(Trade.id))
         .where(func.date(Trade.entry_at) == today)
@@ -84,7 +84,7 @@ async def get_today_trade_count(session: AsyncSession) -> int:
 
 
 async def get_today_signal_count(session: AsyncSession) -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = await session.execute(
         select(func.count(Signal.id))
         .where(func.date(Signal.created_at) == today)
@@ -93,7 +93,7 @@ async def get_today_signal_count(session: AsyncSession) -> int:
 
 
 async def get_today_sell_count(session: AsyncSession) -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = await session.execute(
         select(func.count(Trade.id))
         .where(Trade.status == "closed")
@@ -103,7 +103,7 @@ async def get_today_sell_count(session: AsyncSession) -> int:
 
 
 async def get_today_signal_count_by_market(session: AsyncSession, market: str) -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = await session.execute(
         select(func.count(Signal.id))
         .where(Signal.market == market)
@@ -118,7 +118,7 @@ async def get_open_positions_by_market(session: AsyncSession, market: str) -> li
 
 
 async def get_today_realized_pnl_by_market(session: AsyncSession, market: str) -> float:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = await session.execute(
         select(func.sum(Trade.profit_loss))
         .where(Trade.market == market)
@@ -129,7 +129,7 @@ async def get_today_realized_pnl_by_market(session: AsyncSession, market: str) -
 
 
 async def get_today_trade_count_by_market(session: AsyncSession, market: str) -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = await session.execute(
         select(func.count(Trade.id))
         .where(Trade.market == market)
@@ -139,7 +139,7 @@ async def get_today_trade_count_by_market(session: AsyncSession, market: str) ->
 
 
 async def get_today_sell_count_by_market(session: AsyncSession, market: str) -> int:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = await session.execute(
         select(func.count(Trade.id))
         .where(Trade.market == market)

@@ -157,7 +157,10 @@ class OrderManager:
                 profit_loss_pct=pnl_pct,
                 exit_reason=exit_reason,
             ))
-            position.qty -= qty
+            new_qty = float(position.qty) - qty
+            if new_qty < 0:
+                logger.warning(f"부분매도 수량({qty}) > 포지션 수량({position.qty}) — 0으로 클램핑: {stock_code}")
+            position.qty = max(0.0, new_qty)
             await session.commit()
 
         logger.info(f"Partial sell: {stock_code} x{qty} @ {fill_price:,} ({exit_reason})")

@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 import holidays
 
 _KR_HOLIDAYS = holidays.country_holidays("KR")
@@ -20,9 +21,9 @@ def is_trading_day(d: date | None = None) -> bool:
 
 
 def is_us_trading_day(d: date | None = None) -> bool:
-    """NYSE 기준 미국 거래일 여부 (KST 기준 날짜 입력)."""
+    """NYSE 기준 미국 거래일 여부. 인자 생략 시 NY 현재 날짜 기준으로 판단."""
     if d is None:
-        d = date.today()
+        d = datetime.now(ZoneInfo("America/New_York")).date()
     if d.weekday() >= 5:
         return False
     return d not in _US_HOLIDAYS

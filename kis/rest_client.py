@@ -71,7 +71,8 @@ class KISRestClient:
                     return data
 
                 except httpx.HTTPStatusError as e:
-                    if attempt < _MAX_RETRIES - 1:
+                    # 5xx(서버 오류)만 재시도 — 4xx(잘못된 요청/인증 실패)는 재시도해도 해결 안 됨
+                    if e.response.status_code >= 500 and attempt < _MAX_RETRIES - 1:
                         await asyncio.sleep(_RETRY_DELAY * (attempt + 1))
                         continue
                     raise RuntimeError(f"HTTP error: {e}") from e

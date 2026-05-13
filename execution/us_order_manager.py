@@ -154,7 +154,10 @@ class USOrderManager:
                 profit_loss_pct=pnl_pct,
                 exit_reason=exit_reason,
             ))
-            position.qty -= qty
+            new_qty = round(float(position.qty) - qty, 4)
+            if new_qty < 0:
+                logger.warning(f"US 부분매도 수량({qty}) > 포지션 수량({position.qty}) — 0으로 클램핑: {ticker}")
+            position.qty = max(0.0, new_qty)
             await session.commit()
 
         logger.info(f"US Partial sell: {ticker} x{qty:.4f} @ ${fill_price:.2f} ({exit_reason})")
