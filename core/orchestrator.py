@@ -23,7 +23,7 @@ from strategy.regime_detector import detect_regime, MarketRegime
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
-from core.notifier import notify_buy, notify_sell, notify_daily_summary, notify_pre_market_summary
+from core.notifier import notify_buy, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary
 from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -362,6 +362,7 @@ class Orchestrator:
                         else:
                             self._sell_fail_time[code] = time.monotonic()
                             logger.warning(f"절반 익절 주문 실패 — 5분 후 재시도 예약: {code}")
+                        await notify_sell_fail(code, stock_name, "partial_take_profit", not _is_retry)
                         return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", pnl)
@@ -386,6 +387,7 @@ class Orchestrator:
                         else:
                             self._sell_fail_time[code] = time.monotonic()
                             logger.warning(f"익절 주문 실패 — 5분 후 재시도 예약: {code}")
+                        await notify_sell_fail(code, stock_name, "take_profit", not _is_retry)
                         return
                     pnl = (fill_price - avg_price) * qty
                     await notify_sell(code, stock_name, qty, fill_price, "take_profit", pnl)
@@ -418,6 +420,7 @@ class Orchestrator:
                     else:
                         self._sell_fail_time[code] = time.monotonic()
                         logger.warning(f"손절 주문 실패 — 5분 후 재시도 예약: {code}")
+                    await notify_sell_fail(code, stock_name, "stop_loss", not _is_retry)
                     return
                 pnl = (fill_price - avg_price) * qty
                 await notify_sell(code, stock_name, qty, fill_price, "stop_loss", pnl)

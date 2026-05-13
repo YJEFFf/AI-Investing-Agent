@@ -80,6 +80,22 @@ async def notify_us_pre_market_summary(
     await _send(text)
 
 
+async def notify_us_sell_fail(ticker: str, name: str, reason: str, will_retry: bool) -> None:
+    reason_kr = {"take_profit": "전량 익절", "stop_loss": "손절", "partial_take_profit": "절반 익절"}.get(reason, reason)
+    if will_retry:
+        status = "5분 후 자동 재시도 예정"
+        emoji = "⚠️"
+    else:
+        status = "재시도도 실패 — 수동 확인 필요"
+        emoji = "🚨"
+    text = (
+        f"{emoji} <b>[US] 매도 주문 실패 — {reason_kr}</b>\n"
+        f"종목: {name} ({ticker})\n"
+        f"상태: {status}"
+    )
+    await _send(text)
+
+
 async def notify_us_daily_summary(
     signals: int, trades: int, sells: int, pnl: float,
 ) -> None:

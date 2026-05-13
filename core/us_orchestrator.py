@@ -24,7 +24,7 @@ from strategy.regime_detector import detect_regime, MarketRegime
 from execution.us_order_manager import us_order_manager
 from strategy.agents.decision_agent import TradeSignal
 from core.us_notifier import (
-    notify_us_buy, notify_us_sell, notify_us_pre_market_summary,
+    notify_us_buy, notify_us_sell, notify_us_sell_fail, notify_us_pre_market_summary,
     notify_us_daily_summary, notify_us_watchlist_update,
 )
 from core.trading_calendar import is_us_trading_day
@@ -338,6 +338,7 @@ class USOrchestrator:
                         else:
                             self._sell_fail_time[ticker] = time.monotonic()
                             logger.warning(f"US 절반 익절 주문 실패 — 5분 후 재시도 예약: {ticker}")
+                        await notify_us_sell_fail(ticker, name, "partial_take_profit", not _is_retry)
                         return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_us_sell(ticker, name, half_qty, fill_price, "partial_take_profit", pnl)
@@ -358,6 +359,7 @@ class USOrchestrator:
                         else:
                             self._sell_fail_time[ticker] = time.monotonic()
                             logger.warning(f"US 익절 주문 실패 — 5분 후 재시도 예약: {ticker}")
+                        await notify_us_sell_fail(ticker, name, "take_profit", not _is_retry)
                         return
                     pnl = (fill_price - avg_price) * qty
                     await notify_us_sell(ticker, name, qty, fill_price, "take_profit", pnl)
@@ -392,6 +394,7 @@ class USOrchestrator:
                     else:
                         self._sell_fail_time[ticker] = time.monotonic()
                         logger.warning(f"US 손절 주문 실패 — 5분 후 재시도 예약: {ticker}")
+                    await notify_us_sell_fail(ticker, name, "stop_loss", not _is_retry)
                     return
                 pnl = (fill_price - avg_price) * qty
                 await notify_us_sell(ticker, name, qty, fill_price, "stop_loss", pnl)
