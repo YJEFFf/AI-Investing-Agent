@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime
 
 import pandas as pd
@@ -38,7 +39,8 @@ class Orchestrator:
         self._watchlist: list[dict] = []
         self._kospi_df = None
         self._cached_balance: dict = {"available_cash": 0, "total_eval": 0, "unrealized_pnl": 0}
-        self._sell_locked: set[str] = set()                    # 매도 실패 종목 — 장 마감까지 재시도 차단
+        self._sell_fail_time: dict[str, float] = {}             # 최초 매도 실패 시각 (monotonic) — 5분 후 재시도
+        self._sell_perm_lock: set[str] = set()                 # 재시도 후에도 실패 → 장 마감까지 영구 차단
 
     def _load_watchlist_config(self) -> dict:
         with open(_WATCHLIST_PATH) as f:
@@ -242,7 +244,11 @@ class Orchestrator:
                     notify_target, notify_stop, signal.chart_confidence,
                 )
                 open_pos_count += 1
-                await self._refresh_balance()
+                if not await self._refresh_balance():
+                    # 잔고 갱신 실패 — 체결 비용 수동 차감해 다음 종목 예산 과다 방지
+                    self._cached_balance["available_cash"] = max(
+                        0, self._cached_balance["available_cash"] - fill_price * qty
+                    )
                 balance = self._cached_balance
 
         self._pending_signals.clear()
@@ -256,7 +262,8 @@ class Orchestrator:
         self._trading_active = False
         await kis_ws.stop()
         self._pending_signals.clear()
-        self._sell_locked.clear()
+        self._sell_fail_time.clear()
+        self._sell_perm_lock.clear()
 
     async def pre_close(self) -> None:
         """15:20 장마감 전 스윙 포지션 점검"""
@@ -309,16 +316,27 @@ class Orchestrator:
             tasks = [_check_with_sem(code) for code in held_codes]
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _refresh_balance(self) -> None:
+    async def _refresh_balance(self) -> bool:
         try:
             self._cached_balance = await kis_account.get_balance()
+            return True
         except Exception as e:
             logger.warning(f"잔고 갱신 실패 — 캐시 유지: {e}")
+            return False
 
     async def _check_exit_conditions(self, code: str, current_price: int) -> None:
         """보유 포지션 익절/손절 체크 및 트레일링 스톱 업데이트"""
-        if code in self._sell_locked:
+        if code in self._sell_perm_lock:
             return
+
+        _is_retry = False
+        if code in self._sell_fail_time:
+            elapsed = time.monotonic() - self._sell_fail_time[code]
+            if elapsed < 300:
+                return  # 5분 미만 — 서버 회복 대기
+            del self._sell_fail_time[code]
+            _is_retry = True
+            logger.info(f"매도 재시도 (5분 경과): {code}")
 
         async with AsyncSessionLocal() as session:
             pos = await get_position(session, code)
@@ -338,8 +356,12 @@ class Orchestrator:
                         session, code, half_qty, current_price, "partial_take_profit"
                     )
                     if not result.success:
-                        logger.warning(f"절반 익절 주문 실패 — 장 마감까지 재시도 차단: {code}")
-                        self._sell_locked.add(code)
+                        if _is_retry:
+                            self._sell_perm_lock.add(code)
+                            logger.warning(f"절반 익절 재시도 실패 — 장 마감까지 영구 차단: {code}")
+                        else:
+                            self._sell_fail_time[code] = time.monotonic()
+                            logger.warning(f"절반 익절 주문 실패 — 5분 후 재시도 예약: {code}")
                         return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", pnl)
@@ -358,8 +380,12 @@ class Orchestrator:
                         session, code, qty, current_price, "take_profit"
                     )
                     if not result.success:
-                        logger.warning(f"익절 주문 실패 — 장 마감까지 재시도 차단: {code}")
-                        self._sell_locked.add(code)
+                        if _is_retry:
+                            self._sell_perm_lock.add(code)
+                            logger.warning(f"익절 재시도 실패 — 장 마감까지 영구 차단: {code}")
+                        else:
+                            self._sell_fail_time[code] = time.monotonic()
+                            logger.warning(f"익절 주문 실패 — 5분 후 재시도 예약: {code}")
                         return
                     pnl = (fill_price - avg_price) * qty
                     await notify_sell(code, stock_name, qty, fill_price, "take_profit", pnl)
@@ -386,8 +412,12 @@ class Orchestrator:
                     session, code, qty, current_price, "stop_loss"
                 )
                 if not result.success:
-                    logger.warning(f"손절 주문 실패 — 장 마감까지 재시도 차단: {code}")
-                    self._sell_locked.add(code)
+                    if _is_retry:
+                        self._sell_perm_lock.add(code)
+                        logger.warning(f"손절 재시도 실패 — 장 마감까지 영구 차단: {code}")
+                    else:
+                        self._sell_fail_time[code] = time.monotonic()
+                        logger.warning(f"손절 주문 실패 — 5분 후 재시도 예약: {code}")
                     return
                 pnl = (fill_price - avg_price) * qty
                 await notify_sell(code, stock_name, qty, fill_price, "stop_loss", pnl)

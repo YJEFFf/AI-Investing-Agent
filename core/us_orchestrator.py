@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime
 
 import pandas as pd
@@ -42,7 +43,8 @@ class USOrchestrator:
         self._nasdaq_df: pd.DataFrame | None = None
         self._cached_balance: dict = {"available_usd": 0.0, "total_eval_usd": 0.0}
         self._portfolio_guard = PortfolioGuard()
-        self._sell_locked: set[str] = set()                    # 매도 실패 종목 — 장 마감까지 재시도 차단
+        self._sell_fail_time: dict[str, float] = {}             # 최초 매도 실패 시각 (monotonic) — 5분 후 재시도
+        self._sell_perm_lock: set[str] = set()                 # 재시도 후에도 실패 → 장 마감까지 영구 차단
 
     def _load_watchlist(self) -> list[dict]:
         with open(_WATCHLIST_PATH) as f:
@@ -234,7 +236,11 @@ class USOrchestrator:
                 notify_target = round(fill_price * (1 + signal.target_pct), 4)
                 await notify_us_buy(ticker, name, qty, fill_price, notify_target, notify_stop, signal.chart_confidence)
                 open_pos_count += 1
-                await self._refresh_balance()
+                if not await self._refresh_balance():
+                    # 잔고 갱신 실패 — 체결 비용 수동 차감해 다음 종목 예산 과다 방지
+                    self._cached_balance["available_usd"] = max(
+                        0.0, self._cached_balance["available_usd"] - fill_price * qty
+                    )
                 balance = self._cached_balance
 
         self._pending_signals.clear()
@@ -246,7 +252,8 @@ class USOrchestrator:
         logger.info("US 장 종료")
         self._trading_active = False
         self._pending_signals.clear()
-        self._sell_locked.clear()
+        self._sell_fail_time.clear()
+        self._sell_perm_lock.clear()
 
     async def post_market(self) -> None:
         """06:15 KST — 일일 결산."""
@@ -265,11 +272,13 @@ class USOrchestrator:
             pnl=pnl,
         )
 
-    async def _refresh_balance(self) -> None:
+    async def _refresh_balance(self) -> bool:
         try:
             self._cached_balance = await overseas_account.get_balance()
+            return True
         except Exception as e:
             logger.warning(f"US 잔고 갱신 실패 — 캐시 유지: {e}")
+            return False
 
     async def _polling_loop(self) -> None:
         """1분마다 보유 종목 손절/익절 체크."""
@@ -294,8 +303,17 @@ class USOrchestrator:
 
     async def _check_exit_conditions(self, ticker: str, current_price: float) -> None:
         """USD 기준 익절/손절 체크 및 트레일링 스톱 업데이트."""
-        if ticker in self._sell_locked:
+        if ticker in self._sell_perm_lock:
             return
+
+        _is_retry = False
+        if ticker in self._sell_fail_time:
+            elapsed = time.monotonic() - self._sell_fail_time[ticker]
+            if elapsed < 300:
+                return  # 5분 미만 — 서버 회복 대기
+            del self._sell_fail_time[ticker]
+            _is_retry = True
+            logger.info(f"US 매도 재시도 (5분 경과): {ticker}")
 
         async with AsyncSessionLocal() as session:
             pos = await get_position(session, ticker)
@@ -314,8 +332,12 @@ class USOrchestrator:
                         session, ticker, half_qty, current_price, "partial_take_profit"
                     )
                     if not result.success:
-                        logger.warning(f"US 절반 익절 주문 실패 — 장 마감까지 재시도 차단: {ticker}")
-                        self._sell_locked.add(ticker)
+                        if _is_retry:
+                            self._sell_perm_lock.add(ticker)
+                            logger.warning(f"US 절반 익절 재시도 실패 — 장 마감까지 영구 차단: {ticker}")
+                        else:
+                            self._sell_fail_time[ticker] = time.monotonic()
+                            logger.warning(f"US 절반 익절 주문 실패 — 5분 후 재시도 예약: {ticker}")
                         return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_us_sell(ticker, name, half_qty, fill_price, "partial_take_profit", pnl)
@@ -330,8 +352,12 @@ class USOrchestrator:
                         session, ticker, qty, current_price, "take_profit"
                     )
                     if not result.success:
-                        logger.warning(f"US 익절 주문 실패 — 장 마감까지 재시도 차단: {ticker}")
-                        self._sell_locked.add(ticker)
+                        if _is_retry:
+                            self._sell_perm_lock.add(ticker)
+                            logger.warning(f"US 익절 재시도 실패 — 장 마감까지 영구 차단: {ticker}")
+                        else:
+                            self._sell_fail_time[ticker] = time.monotonic()
+                            logger.warning(f"US 익절 주문 실패 — 5분 후 재시도 예약: {ticker}")
                         return
                     pnl = (fill_price - avg_price) * qty
                     await notify_us_sell(ticker, name, qty, fill_price, "take_profit", pnl)
@@ -360,8 +386,12 @@ class USOrchestrator:
                     session, ticker, qty, current_price, "stop_loss"
                 )
                 if not result.success:
-                    logger.warning(f"US 손절 주문 실패 — 장 마감까지 재시도 차단: {ticker}")
-                    self._sell_locked.add(ticker)
+                    if _is_retry:
+                        self._sell_perm_lock.add(ticker)
+                        logger.warning(f"US 손절 재시도 실패 — 장 마감까지 영구 차단: {ticker}")
+                    else:
+                        self._sell_fail_time[ticker] = time.monotonic()
+                        logger.warning(f"US 손절 주문 실패 — 5분 후 재시도 예약: {ticker}")
                     return
                 pnl = (fill_price - avg_price) * qty
                 await notify_us_sell(ticker, name, qty, fill_price, "stop_loss", pnl)
