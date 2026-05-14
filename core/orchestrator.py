@@ -288,7 +288,7 @@ class Orchestrator:
                 signals=signal_count,
                 trades=trade_count,
                 sells=sell_count,
-                pnl=pnl,
+                pnl=int(pnl),
             )
 
     async def _polling_loop(self) -> None:
@@ -342,11 +342,13 @@ class Orchestrator:
             pos = await get_position(session, code)
             if pos is None:
                 return
+            if int(pos.qty) <= 0:
+                return
 
             # 익절 체크 — 절반 먼저 매도, 나머지는 손익분기 trailing stop으로 유지
             if pos.target_price and current_price >= pos.target_price:
-                half_qty = pos.qty // 2
-                if half_qty > 0 and pos.qty > 1:
+                half_qty = int(pos.qty) // 2
+                if half_qty > 0 and int(pos.qty) > 1:
                     # execute_partial_sell이 session.commit()을 호출하면 pos 속성이 expire됨
                     # async 컨텍스트에서 재로드 불가하므로 commit 전에 미리 저장
                     avg_price = int(pos.avg_price)
@@ -365,7 +367,7 @@ class Orchestrator:
                         await notify_sell_fail(code, stock_name, "partial_take_profit", not _is_retry)
                         return
                     pnl = (fill_price - avg_price) * half_qty
-                    await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", pnl)
+                    await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", int(pnl))
                     # 나머지 절반: 손익분기(avg_price)로 stop 이동, trailing 비율 확대, target 제거
                     pos.stop_price = avg_price
                     pos.trail_pct = settings.partial_tp_trail_pct
@@ -373,7 +375,7 @@ class Orchestrator:
                     await session.commit()
                 else:
                     # 1주만 보유 시 전량 익절
-                    qty = pos.qty
+                    qty = int(pos.qty)
                     avg_price = int(pos.avg_price)
                     stock_name = pos.stock_name
                     logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
@@ -390,7 +392,7 @@ class Orchestrator:
                         await notify_sell_fail(code, stock_name, "take_profit", not _is_retry)
                         return
                     pnl = (fill_price - avg_price) * qty
-                    await notify_sell(code, stock_name, qty, fill_price, "take_profit", pnl)
+                    await notify_sell(code, stock_name, qty, fill_price, "take_profit", int(pnl))
                 await self._refresh_balance()
                 return
 
@@ -406,7 +408,7 @@ class Orchestrator:
 
             # 손절 체크
             if should_stop(pos, current_price):
-                qty = pos.qty
+                qty = int(pos.qty)
                 avg_price = int(pos.avg_price)
                 stock_name = pos.stock_name
                 logger.info(f"손절 발동: {code} @ {current_price} (손절가: {pos.stop_price})")
@@ -423,7 +425,7 @@ class Orchestrator:
                     await notify_sell_fail(code, stock_name, "stop_loss", not _is_retry)
                     return
                 pnl = (fill_price - avg_price) * qty
-                await notify_sell(code, stock_name, qty, fill_price, "stop_loss", pnl)
+                await notify_sell(code, stock_name, qty, fill_price, "stop_loss", int(pnl))
                 await self._refresh_balance()
                 return
 

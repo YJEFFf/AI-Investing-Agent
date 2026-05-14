@@ -319,6 +319,8 @@ class USOrchestrator:
             pos = await get_position(session, ticker)
             if pos is None:
                 return
+            if float(pos.qty) <= 0.0:
+                return
 
             # 익절 체크
             if pos.target_price and current_price >= float(pos.target_price):
