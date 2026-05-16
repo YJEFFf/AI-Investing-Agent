@@ -45,6 +45,7 @@ class USOrchestrator:
         self._portfolio_guard = PortfolioGuard()
         self._sell_fail_time: dict[str, float] = {}             # 최초 매도 실패 시각 (monotonic) — 5분 후 재시도
         self._sell_perm_lock: set[str] = set()                 # 재시도 후에도 실패 → 장 마감까지 영구 차단
+        self._reenter_lock = asyncio.Lock()                    # 재진입 분석 중복 실행 방지
 
     def _load_watchlist(self) -> list[dict]:
         with open(_WATCHLIST_PATH) as f:
@@ -367,6 +368,7 @@ class USOrchestrator:
                         return
                     pnl = (fill_price - avg_price) * qty
                     await notify_us_sell(ticker, name, qty, fill_price, "take_profit", pnl)
+                    asyncio.create_task(self._analyze_and_reenter())
                 await self._refresh_balance()
                 return
 
@@ -402,7 +404,77 @@ class USOrchestrator:
                     return
                 pnl = (fill_price - avg_price) * qty
                 await notify_us_sell(ticker, name, qty, fill_price, "stop_loss", pnl)
+                asyncio.create_task(self._analyze_and_reenter())
                 await self._refresh_balance()
+
+    async def _analyze_and_reenter(self) -> None:
+        """전량 청산 후 즉시 재분석 → 최고 confidence 종목 재진입."""
+        if self._reenter_lock.locked():
+            logger.debug("US 재진입 분석 이미 실행 중 — 중복 스킵")
+            return
+        async with self._reenter_lock:
+            if not self._trading_active:
+                return
+            if not self._ohlcv_buffer or not self._watchlist:
+                logger.info("US 재진입 스킵: OHLCV 캐시 없음")
+                return
+
+            await asyncio.sleep(5)  # 매도 체결 후 잔고 반영 대기
+            await self._refresh_balance()
+            balance = self._cached_balance
+            if balance.get("available_usd", 0) < 1.0:
+                logger.info("US 재진입 스킵: 가용 잔고 없음")
+                return
+
+            async with AsyncSessionLocal() as session:
+                open_positions = await get_open_positions_by_market(session, "US")
+                open_pos_count = len(open_positions)
+                already_held = {pos.stock_code for pos in open_positions}
+                today_pnl = await get_today_realized_pnl_by_market(session, "US")
+            daily_pnl_pct = today_pnl / balance["total_eval_usd"] if balance["total_eval_usd"] > 0 else 0.0
+            drawdown_pct = self._portfolio_guard.get_drawdown_pct(balance["total_eval_usd"])
+
+            regime = detect_regime(self._nasdaq_df) if self._nasdaq_df is not None else MarketRegime.RANGING
+            if regime == MarketRegime.TRENDING_DOWN:
+                logger.info("US 재진입 스킵: 하락장 레짐")
+                return
+
+            logger.info("US 청산 후 재진입 분석 시작")
+            new_signals: dict[str, TradeSignal] = {}
+            sem = asyncio.Semaphore(3)
+
+            async def _analyze(stock: dict) -> None:
+                ticker = stock["ticker"]
+                if ticker in already_held:
+                    return
+                df = self._ohlcv_buffer.get(ticker)
+                if df is None or df.empty or len(df) < 60:
+                    return
+                async with sem:
+                    try:
+                        signal = await multi_agent_strategy.evaluate(
+                            stock_code=ticker,
+                            stock_name=stock.get("name", ticker),
+                            ohlcv_df=df,
+                            kospi_df=self._nasdaq_df if self._nasdaq_df is not None else df,
+                            open_positions=open_pos_count,
+                            daily_pnl_pct=daily_pnl_pct,
+                            drawdown_pct=drawdown_pct,
+                        )
+                        if signal.action == "buy":
+                            new_signals[ticker] = signal
+                    except Exception as e:
+                        logger.warning(f"US 재진입 분석 실패 {ticker}: {e}")
+
+            await asyncio.gather(*[_analyze(s) for s in self._watchlist], return_exceptions=True)
+            logger.info(f"US 재진입 분석 완료: {len(new_signals)}개 매수 신호")
+
+            if not new_signals:
+                logger.info("US 재진입: 매수 신호 없음")
+                return
+
+            self._pending_signals = new_signals
+            await self._execute_pending_signals()
 
     async def run(self) -> None:
         from core.us_scheduler import create_us_scheduler
