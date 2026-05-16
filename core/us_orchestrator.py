@@ -180,68 +180,70 @@ class USOrchestrator:
             today_pnl = await get_today_realized_pnl_by_market(session, "US")
             daily_pnl_pct = today_pnl / balance["total_eval_usd"] if balance["total_eval_usd"] > 0 else 0.0
 
-            # 가용 USD를 매수 대상 종목 수로 균등 분할
-            eligible = [t for t in self._pending_signals if t not in already_held]
-            n = max(1, len(eligible))
-            per_stock_usd = balance["available_usd"] / n
-            logger.info(f"US 시드 균등 분할: ${balance['available_usd']:.2f} ÷ {n}종목 = ${per_stock_usd:.2f}/종목")
+            # 가용 시드가 적으므로 confidence 최고 종목 1개에 전액 집중
+            eligible = [
+                (t, s) for t, s in self._pending_signals.items()
+                if t not in already_held
+            ]
+            if not eligible:
+                logger.info("US 매수 대상 없음 (이미 보유 중이거나 신호 없음)")
+                self._pending_signals.clear()
+                return
 
-            for ticker, signal in list(self._pending_signals.items()):
-                if ticker in already_held:
-                    continue
+            ticker, signal = max(eligible, key=lambda x: x[1].chart_confidence)
+            logger.info(
+                f"US 최고 confidence 종목 단일 집중: {ticker} (confidence={signal.chart_confidence:.2f}) "
+                f"| 후보 {len(eligible)}개 중 선택"
+            )
 
-                allowed, reason = self._portfolio_guard.allows_new_entry(
-                    open_pos_count, balance["total_eval_usd"], daily_pnl_pct
-                )
-                if not allowed:
-                    logger.info(f"US 포트폴리오 한도 도달: {reason}")
-                    break
+            allowed, reason = self._portfolio_guard.allows_new_entry(
+                open_pos_count, balance["total_eval_usd"], daily_pnl_pct
+            )
+            if not allowed:
+                logger.info(f"US 포트폴리오 한도 도달: {reason}")
+                self._pending_signals.clear()
+                return
 
-                try:
-                    info = await overseas_market_data.get_current_price(ticker)
-                    current_price = info["price"]
-                except Exception as e:
-                    logger.warning(f"US 현재가 조회 실패 {ticker}: {e}")
-                    continue
+            try:
+                info = await overseas_market_data.get_current_price(ticker)
+                current_price = info["price"]
+            except Exception as e:
+                logger.warning(f"US 현재가 조회 실패 {ticker}: {e}")
+                self._pending_signals.clear()
+                return
 
-                # 균등 예산과 실제 가용 잔고 중 작은 값으로 수량 계산 (이전 체결 후 잔고 감소 반영)
-                # 시가 매수: 09:30 조회가 ≠ 실제 체결가 (개장 직후 변동성 큼) → 7% 버퍼
-                effective_usd = min(per_stock_usd, balance["available_usd"])
-                qty = round((effective_usd * 0.93) / current_price, 4)
-                if qty <= 0.0001:
-                    logger.info(f"US 매수 수량 너무 작음 → 스킵: {ticker}")
-                    continue
+            # 전액 매수: 개장 직후 변동성 → 7% 버퍼
+            qty = round((balance["available_usd"] * 0.93) / current_price, 4)
+            if qty <= 0.0001:
+                logger.info(f"US 매수 수량 너무 작음 → 스킵: {ticker} (잔고 ${balance['available_usd']:.2f})")
+                self._pending_signals.clear()
+                return
 
-                name = next((s["name"] for s in self._watchlist if s["ticker"] == ticker), ticker)
-                signal_record = Signal(
-                    market="US",
-                    stock_code=ticker,
-                    ta_score=signal.ta_score,
-                    chart_verdict=signal.chart_verdict,
-                    chart_confidence=signal.chart_confidence,
-                    risk_level=signal.risk_level,
-                    final_action=signal.action,
-                    position_size_pct=signal.position_ratio,
-                    reasoning=signal.reasoning,
-                )
-                await save_signal(session, signal_record)
+            name = next((s["name"] for s in self._watchlist if s["ticker"] == ticker), ticker)
+            signal_record = Signal(
+                market="US",
+                stock_code=ticker,
+                ta_score=signal.ta_score,
+                chart_verdict=signal.chart_verdict,
+                chart_confidence=signal.chart_confidence,
+                risk_level=signal.risk_level,
+                final_action=signal.action,
+                position_size_pct=signal.position_ratio,
+                reasoning=signal.reasoning,
+            )
+            await save_signal(session, signal_record)
 
-                result, fill_price = await us_order_manager.execute_buy(
-                    session, ticker, name, qty, signal, current_price
-                )
-                if not result.success:
-                    logger.warning(f"US 매수 실패 — 텔레그램 알림 생략: {ticker}")
-                    continue
-                notify_stop = round(fill_price * (1 - signal.stop_pct), 4)
-                notify_target = round(fill_price * (1 + signal.target_pct), 4)
-                await notify_us_buy(ticker, name, qty, fill_price, notify_target, notify_stop, signal.chart_confidence)
-                open_pos_count += 1
-                if not await self._refresh_balance():
-                    # 잔고 갱신 실패 — 체결 비용 수동 차감해 다음 종목 예산 과다 방지
-                    self._cached_balance["available_usd"] = max(
-                        0.0, self._cached_balance["available_usd"] - fill_price * qty
-                    )
-                balance = self._cached_balance
+            result, fill_price = await us_order_manager.execute_buy(
+                session, ticker, name, qty, signal, current_price
+            )
+            if not result.success:
+                logger.warning(f"US 매수 실패 — 텔레그램 알림 생략: {ticker}")
+                self._pending_signals.clear()
+                return
+
+            notify_stop = round(fill_price * (1 - signal.stop_pct), 4)
+            notify_target = round(fill_price * (1 + signal.target_pct), 4)
+            await notify_us_buy(ticker, name, qty, fill_price, notify_target, notify_stop, signal.chart_confidence)
 
         self._pending_signals.clear()
 
