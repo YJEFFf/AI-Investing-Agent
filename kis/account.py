@@ -29,8 +29,10 @@ class KISAccount:
         )
         summary = data.get("output2", [{}])
         summary = summary[0] if isinstance(summary, list) and summary else summary
+        # nxdy_excc_amt(익일청산예수금): T+2 매도 대금까지 포함한 실사용 가능 금액
+        # dnca_tot_amt(예수금총금액): T+2 결제 전 매도 대금 미반영 → 청산 직후 음수 가능
         return {
-            "available_cash": int(float(summary.get("dnca_tot_amt", 0))),
+            "available_cash": int(float(summary.get("nxdy_excc_amt", 0))),
             "total_eval": int(float(summary.get("tot_evlu_amt", 0))),
             "unrealized_pnl": int(float(summary.get("evlu_pfls_smtl_amt", 0))),
         }
