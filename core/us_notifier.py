@@ -107,6 +107,15 @@ async def notify_us_daily_summary(
     await _send(text)
 
 
+async def notify_us_reenter_no_signal(scanned: int) -> None:
+    text = (
+        f"♻️ <b>[US] 재진입 분석 완료</b>\n"
+        f"스캔: {scanned}개 → 매수 신호 없음\n"
+        f"현금 보유 상태로 대기"
+    )
+    await _send(text)
+
+
 async def notify_us_watchlist_update(added: list[str], removed: list[str]) -> None:
     if not added and not removed:
         return

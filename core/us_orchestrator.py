@@ -27,7 +27,7 @@ from execution.us_order_manager import us_order_manager
 from strategy.agents.decision_agent import TradeSignal
 from core.us_notifier import (
     notify_us_buy, notify_us_sell, notify_us_sell_fail, notify_us_pre_market_summary,
-    notify_us_daily_summary, notify_us_watchlist_update,
+    notify_us_daily_summary, notify_us_watchlist_update, notify_us_reenter_no_signal,
 )
 from core.trading_calendar import is_us_trading_day
 
@@ -197,7 +197,7 @@ class USOrchestrator:
             logger.info(f"US 매수 신호 실행: {len(self._pending_signals)}개")
             await self._execute_pending_signals()
 
-    async def _execute_pending_signals(self) -> None:
+    async def _execute_pending_signals(self, skip_guard: bool = False) -> None:
         async with AsyncSessionLocal() as session:
             balance = self._cached_balance
             open_positions = await get_open_positions_by_market(session, "US")
@@ -223,13 +223,14 @@ class USOrchestrator:
                 f"| 후보 {len(eligible)}개 중 선택"
             )
 
-            allowed, reason = self._portfolio_guard.allows_new_entry(
-                open_pos_count, balance["total_eval_usd"], daily_pnl_pct
-            )
-            if not allowed:
-                logger.info(f"US 포트폴리오 한도 도달: {reason}")
-                self._pending_signals.clear()
-                return
+            if not skip_guard:
+                allowed, reason = self._portfolio_guard.allows_new_entry(
+                    open_pos_count, balance["total_eval_usd"], daily_pnl_pct
+                )
+                if not allowed:
+                    logger.info(f"US 포트폴리오 한도 도달: {reason}")
+                    self._pending_signals.clear()
+                    return
 
             try:
                 info = await overseas_market_data.get_current_price(ticker)
@@ -394,7 +395,7 @@ class USOrchestrator:
                         return
                     pnl = (fill_price - avg_price) * qty
                     await notify_us_sell(ticker, name, qty, fill_price, "take_profit", pnl)
-                    asyncio.create_task(self._analyze_and_reenter())
+                    asyncio.create_task(self._analyze_and_reenter(freed_usd=fill_price * qty))
                 await self._refresh_balance()
                 return
 
@@ -430,10 +431,10 @@ class USOrchestrator:
                     return
                 pnl = (fill_price - avg_price) * qty
                 await notify_us_sell(ticker, name, qty, fill_price, "stop_loss", pnl)
-                asyncio.create_task(self._analyze_and_reenter())
+                asyncio.create_task(self._analyze_and_reenter(freed_usd=fill_price * qty))
                 await self._refresh_balance()
 
-    async def _analyze_and_reenter(self) -> None:
+    async def _analyze_and_reenter(self, freed_usd: float = 0.0) -> None:
         """전량 청산 후 즉시 재분석 → 최고 confidence 종목 재진입."""
         if self._reenter_lock.locked():
             logger.debug("US 재진입 분석 이미 실행 중 — 중복 스킵")
@@ -448,8 +449,27 @@ class USOrchestrator:
             await asyncio.sleep(5)  # 매도 체결 후 잔고 반영 대기
             await self._refresh_balance()
             balance = self._cached_balance
-            if balance.get("available_usd", 0) < 1.0:
-                logger.info("US 재진입 스킵: 가용 잔고 없음")
+
+            # T+1 결제 미반영 보정: 매도 직후 API가 아직 proceeds를 반영 안 한 경우
+            # freed_usd의 50% 미만으로 보이면 T+1 지연으로 판단하고 freed_usd 기준 사용
+            available = balance.get("available_usd", 0.0)
+            if freed_usd > 0 and available < freed_usd * 0.5:
+                logger.info(
+                    f"US T+1 결제 미반영 감지 — API 잔고 ${available:.2f} < 매도대금 ${freed_usd:.2f} × 0.5 "
+                    f"→ freed_usd 기준으로 재진입"
+                )
+                available = freed_usd * 0.93  # 7% 버퍼
+                balance = {**balance, "available_usd": available}
+                self._cached_balance = balance
+
+            if available < 1.0:
+                logger.info(f"US 재진입 스킵: 가용 잔고 없음 (${available:.2f})")
+                return
+
+            # max_drawdown_pct만 체크 — daily_loss_cap은 단일종목 올인 전략에 맞지 않아 우회
+            drawdown_pct = self._portfolio_guard.get_drawdown_pct(balance["total_eval_usd"])
+            if drawdown_pct >= settings.max_drawdown_pct:
+                logger.info(f"US 재진입 스킵: 최대 낙폭 도달 ({drawdown_pct:.1%} >= {settings.max_drawdown_pct:.1%})")
                 return
 
             async with AsyncSessionLocal() as session:
@@ -458,7 +478,6 @@ class USOrchestrator:
                 already_held = {pos.stock_code for pos in open_positions}
                 today_pnl = await get_today_realized_pnl_by_market(session, "US")
             daily_pnl_pct = today_pnl / balance["total_eval_usd"] if balance["total_eval_usd"] > 0 else 0.0
-            drawdown_pct = self._portfolio_guard.get_drawdown_pct(balance["total_eval_usd"])
 
             regime = detect_regime(self._nasdaq_df) if self._nasdaq_df is not None else MarketRegime.RANGING
             if regime == MarketRegime.TRENDING_DOWN:
@@ -497,10 +516,13 @@ class USOrchestrator:
 
             if not new_signals:
                 logger.info("US 재진입: 매수 신호 없음")
+                await notify_us_reenter_no_signal(len(self._ta_filtered_watchlist))
                 return
 
             self._pending_signals = new_signals
-            await self._execute_pending_signals()
+            # skip_guard=True: 재진입은 daily_loss_cap·drawdown 차단 대상 아님
+            # (방금 청산한 자금을 재배치하는 것이므로 장전 매수와 다른 상황)
+            await self._execute_pending_signals(skip_guard=True)
 
     async def run(self) -> None:
         from core.us_scheduler import create_us_scheduler
