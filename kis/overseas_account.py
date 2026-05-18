@@ -1,7 +1,7 @@
 import logging
 
 from config.settings import settings
-from kis.rest_client import kis_client
+from kis.real_client import kis_real_client
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class KISOverseasAccount:
     async def get_balance(self) -> dict:
         """해외주식 잔고 조회 — USD 가용현금·총평가금액 반환."""
         acnt, prdt = self._account_parts()
-        data = await kis_client.get(
+        data = await kis_real_client.get(
             "/uapi/overseas-stock/v1/account/inquire-present-balance",
             tr_id="CTRP6504R",
             params={

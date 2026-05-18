@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 
 from config.settings import settings
-from kis.rest_client import kis_client
+from kis.real_client import kis_real_client
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class KISOverseasOrder:
             "ORD_DVSN": "00",
         }
         try:
-            data = await kis_client.post(
+            data = await kis_real_client.post(
                 "/uapi/overseas-stock/v1/trading/order",
                 tr_id=tr_id,
                 body=body,

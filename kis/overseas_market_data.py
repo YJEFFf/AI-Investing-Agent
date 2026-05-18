@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from kis.rest_client import kis_client
+from kis.real_client import kis_real_client
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ _EXCD = "NAS"  # NASDAQ 100 종목은 전부 NASDAQ
 class KISOverseasMarketData:
     async def get_current_price(self, ticker: str) -> dict:
         """해외주식 현재가 조회 (USD)."""
-        data = await kis_client.get(
+        data = await kis_real_client.get(
             "/uapi/overseas-price/v1/quotations/price",
             tr_id="HHDFS00000300",
             params={"AUTH": "", "EXCD": _EXCD, "SYMB": ticker},
@@ -38,7 +38,7 @@ class KISOverseasMarketData:
         for _ in range(max_pages):
             if len(all_rows) >= count:
                 break
-            data = await kis_client.get(
+            data = await kis_real_client.get(
                 "/uapi/overseas-price/v1/quotations/dailyprice",
                 tr_id="HHDFS76240000",
                 params={

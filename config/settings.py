@@ -9,11 +9,15 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # KIS API
+    # KIS API — 국장 모의투자용 (openapivts)
     kis_app_key: str
     kis_app_secret: str
     kis_account_no: str
     kis_env: str = "vps"  # vps=모의매매, prod=실전
+
+    # KIS API — 미장 실전용 (openapi, 해외주식 모의 환경 없음)
+    kis_real_app_key: str = ""
+    kis_real_app_secret: str = ""
 
     # Anthropic
     anthropic_api_key: str
@@ -46,6 +50,10 @@ class Settings(BaseSettings):
     def kis_base_url(self) -> str:
         if self.is_paper:
             return "https://openapivts.koreainvestment.com:29443"
+        return "https://openapi.koreainvestment.com:9443"
+
+    @property
+    def kis_real_base_url(self) -> str:
         return "https://openapi.koreainvestment.com:9443"
 
     @property
