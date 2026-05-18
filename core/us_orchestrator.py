@@ -70,13 +70,9 @@ class USOrchestrator:
         logger.info("US 장전 준비 시작")
         self._pending_signals.clear()
 
-        try:
-            balance = await overseas_account.get_balance()
-            self._cached_balance = balance
-            self._portfolio_guard.update_peak(balance["total_eval_usd"])
-        except Exception as e:
-            logger.warning(f"US 잔고 조회 실패 — 캐시 사용: {e}")
-            balance = self._cached_balance
+        balance = await self._get_us_balance()
+        self._cached_balance = balance
+        self._portfolio_guard.update_peak(balance["total_eval_usd"])
 
         self._watchlist = self._load_watchlist()
         logger.info(f"US 워치리스트: {len(self._watchlist)}개 종목")
@@ -187,11 +183,11 @@ class USOrchestrator:
         asyncio.create_task(self._polling_loop())
 
         try:
-            balance = await overseas_account.get_balance()
+            balance = await self._get_us_balance()
             self._cached_balance = balance
             self._portfolio_guard.update_peak(balance["total_eval_usd"])
         except Exception as e:
-            logger.warning(f"US 장 시작 잔고 조회 실패 — 캐시 사용: {e}")
+            logger.warning(f"US 장 시작 잔고 갱신 실패 — 캐시 유지: {e}")
 
         if self._pending_signals:
             logger.info(f"US 매수 신호 실행: {len(self._pending_signals)}개")
@@ -302,9 +298,28 @@ class USOrchestrator:
             pnl=pnl,
         )
 
+    async def _get_us_balance(self) -> dict:
+        """잔고 조회. API 실패 또는 $0 반환 시 seed_usd + DB 포지션으로 보정."""
+        try:
+            balance = await overseas_account.get_balance()
+        except Exception as e:
+            logger.warning(f"US 잔고 조회 실패 — 폴백 사용: {e}")
+            balance = self._cached_balance.copy()
+
+        if balance.get("available_usd", 0) < 1.0 and settings.us_seed_usd > 0:
+            async with AsyncSessionLocal() as session:
+                positions = await get_open_positions_by_market(session, "US")
+            used = sum(float(p.qty) * float(p.avg_price) for p in positions)
+            available = max(0.0, settings.us_seed_usd - used)
+            total = settings.us_seed_usd
+            balance = {**balance, "available_usd": available, "total_eval_usd": total}
+            logger.info(f"US 잔고 폴백: seed=${settings.us_seed_usd:.2f} - 포지션=${used:.2f} → 가용=${available:.2f}")
+
+        return balance
+
     async def _refresh_balance(self) -> bool:
         try:
-            self._cached_balance = await overseas_account.get_balance()
+            self._cached_balance = await self._get_us_balance()
             return True
         except Exception as e:
             logger.warning(f"US 잔고 갱신 실패 — 캐시 유지: {e}")
