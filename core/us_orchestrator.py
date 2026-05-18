@@ -21,6 +21,8 @@ from risk.portfolio_guard import PortfolioGuard
 from risk.stop_loss import should_stop
 from strategy.multi_agent_strategy import multi_agent_strategy
 from strategy.regime_detector import detect_regime, MarketRegime
+from strategy.ta_engine import ta_engine
+from strategy.signal_scorer import compute_score
 from execution.us_order_manager import us_order_manager
 from strategy.agents.decision_agent import TradeSignal
 from core.us_notifier import (
@@ -32,6 +34,7 @@ from core.trading_calendar import is_us_trading_day
 logger = logging.getLogger(__name__)
 
 _WATCHLIST_PATH = "config/us_watchlist.yaml"
+_TA_TOP_N = 40
 
 
 class USOrchestrator:
@@ -46,6 +49,7 @@ class USOrchestrator:
         self._sell_fail_time: dict[str, float] = {}             # 최초 매도 실패 시각 (monotonic) — 5분 후 재시도
         self._sell_perm_lock: set[str] = set()                 # 재시도 후에도 실패 → 장 마감까지 영구 차단
         self._reenter_lock = asyncio.Lock()                    # 재진입 분석 중복 실행 방지
+        self._ta_filtered_watchlist: list[dict] = []           # TA 점수 상위 40 (당일)
 
     def _load_watchlist(self) -> list[dict]:
         with open(_WATCHLIST_PATH) as f:
@@ -105,6 +109,25 @@ class USOrchestrator:
             except Exception as e:
                 logger.warning(f"US 일봉 로드 실패 {ticker}: {e}")
 
+        # TA 점수로 상위 40 필터링 (토큰 미사용 — 순수 pandas 계산)
+        scored = []
+        for stock in self._watchlist:
+            ticker = stock["ticker"]
+            df = self._ohlcv_buffer.get(ticker)
+            if df is None or len(df) < 60:
+                continue
+            ta_result = ta_engine.compute(df)
+            if ta_result is None:
+                continue
+            score = compute_score(ta_result, float(df["close"].iloc[-1]), regime)
+            scored.append((stock, score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        self._ta_filtered_watchlist = [s for s, _ in scored[:_TA_TOP_N]]
+        logger.info(
+            f"US TA 필터링: {len(self._watchlist)}개 → 상위 {len(self._ta_filtered_watchlist)}개 선정"
+            + (f" (TA {scored[len(self._ta_filtered_watchlist)-1][1]:.1f}~{scored[0][1]:.1f}점)" if scored else "")
+        )
+
         async with AsyncSessionLocal() as session:
             open_positions = await get_open_positions_by_market(session, "US")
             open_pos_count = len(open_positions)
@@ -112,7 +135,7 @@ class USOrchestrator:
         daily_pnl_pct = today_pnl / balance["total_eval_usd"] if balance["total_eval_usd"] > 0 else 0.0
         drawdown_pct = self._portfolio_guard.get_drawdown_pct(balance["total_eval_usd"])
 
-        # 차트 이미지 분석 (최대 3개 동시)
+        # 차트 이미지 분석 (최대 3개 동시) — TA 상위 40만 대상
         sem = asyncio.Semaphore(3)
 
         async def _analyze(stock: dict) -> None:
@@ -138,7 +161,7 @@ class USOrchestrator:
                 except Exception as e:
                     logger.warning(f"US 분석 실패 {ticker}: {e}")
 
-        await asyncio.gather(*[_analyze(s) for s in self._watchlist], return_exceptions=True)
+        await asyncio.gather(*[_analyze(s) for s in self._ta_filtered_watchlist], return_exceptions=True)
         logger.info(f"US 장전 분석 완료: {len(self._pending_signals)}개 매수 신호")
 
         signal_list = [
@@ -415,7 +438,7 @@ class USOrchestrator:
         async with self._reenter_lock:
             if not self._trading_active:
                 return
-            if not self._ohlcv_buffer or not self._watchlist:
+            if not self._ohlcv_buffer or not self._ta_filtered_watchlist:
                 logger.info("US 재진입 스킵: OHLCV 캐시 없음")
                 return
 
@@ -466,7 +489,7 @@ class USOrchestrator:
                     except Exception as e:
                         logger.warning(f"US 재진입 분석 실패 {ticker}: {e}")
 
-            await asyncio.gather(*[_analyze(s) for s in self._watchlist], return_exceptions=True)
+            await asyncio.gather(*[_analyze(s) for s in self._ta_filtered_watchlist], return_exceptions=True)
             logger.info(f"US 재진입 분석 완료: {len(new_signals)}개 매수 신호")
 
             if not new_signals:
