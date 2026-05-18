@@ -34,9 +34,14 @@ if not settings.is_paper:
 from core.orchestrator import orchestrator
 from core.us_orchestrator import us_orchestrator
 
-if __name__ == "__main__":
-    asyncio.run(asyncio.gather(
+
+async def _main():
+    await asyncio.gather(
         orchestrator.run(),
         us_orchestrator.run(),
         return_exceptions=True,
-    ))
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())
