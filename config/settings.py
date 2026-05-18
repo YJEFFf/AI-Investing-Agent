@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # KIS API — 미장 실전용 (openapi, 해외주식 모의 환경 없음)
     kis_real_app_key: str = ""
     kis_real_app_secret: str = ""
+    kis_real_account_no: str = ""  # 실전 계좌번호 (모의 계좌번호와 다름)
     us_seed_usd: float = 0.0  # 미장 시드 (잔고 API 실패 시 폴백)
 
     # Anthropic

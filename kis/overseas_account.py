@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class KISOverseasAccount:
     def _account_parts(self) -> tuple[str, str]:
-        no = settings.kis_account_no
+        no = settings.kis_real_account_no or settings.kis_account_no
         if "-" in no:
             acnt, prdt = no.split("-", 1)
         else:
