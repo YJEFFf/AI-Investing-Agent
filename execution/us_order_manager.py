@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config.settings import settings
 from kis.overseas_order import overseas_order, OverseasOrderResult
 from repository.models import Trade, Position
 from repository.queries import save_trade, save_position, delete_position, get_position, get_open_trade
@@ -31,7 +32,7 @@ class USOrderManager:
         if result.fill_price and abs(result.fill_price - current_price) / current_price > 0.001:
             logger.info(f"US 체결가 반영: {ticker} 추정가 ${current_price:.2f} → 실제 ${fill_price:.2f}")
 
-        stop_pct = signal.stop_pct if signal.stop_pct > 0 else 0.05
+        stop_pct = signal.stop_pct if signal.stop_pct > 0 else settings.us_swing_stop_pct
         target_pct = signal.target_pct if signal.target_pct > 0 else 0.08
         actual_stop = round(fill_price * (1 - stop_pct), 4)
         actual_target = round(fill_price * (1 + target_pct), 4)
@@ -83,13 +84,13 @@ class USOrderManager:
 
         fill_price = result.fill_price or current_price
 
-        position = await get_position(session, ticker)
+        position = await get_position(session, ticker, market="US")
         if position is None:
             logger.warning(f"US 포지션 없음 — 매도 기록 누락: {ticker}")
         if position:
             pnl = (fill_price - float(position.avg_price)) * qty
             pnl_pct = (fill_price - float(position.avg_price)) / float(position.avg_price)
-            trade = await get_open_trade(session, ticker)
+            trade = await get_open_trade(session, ticker, market="US")
             if trade:
                 trade.status = "closed"
                 trade.exit_at = datetime.utcnow()
@@ -113,7 +114,7 @@ class USOrderManager:
                     profit_loss_pct=pnl_pct,
                     exit_reason=exit_reason,
                 ))
-            await delete_position(session, ticker)
+            await delete_position(session, ticker, market="US")
 
         logger.info(f"US Sell: {ticker} x{qty:.4f} @ ${fill_price:.2f} ({exit_reason})")
         return result, fill_price
@@ -134,7 +135,7 @@ class USOrderManager:
 
         fill_price = result.fill_price or current_price
 
-        position = await get_position(session, ticker)
+        position = await get_position(session, ticker, market="US")
         if position is None:
             logger.warning(f"US 포지션 없음 — 부분매도 기록 누락: {ticker}")
         if position:

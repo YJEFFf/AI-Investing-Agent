@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, Float, String, DateTime, Boolean, Text, Enum
+    Column, Integer, Float, String, DateTime, Boolean, Text, Enum, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase
 import enum
@@ -63,10 +63,11 @@ class Trade(Base):
 class Position(Base):
     """현재 보유 포지션 (실시간 상태)"""
     __tablename__ = "positions"
+    __table_args__ = (UniqueConstraint("market", "stock_code", name="uq_position_market_code"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     market = Column(String(2), default="KR", nullable=False)  # KR | US
-    stock_code = Column(String(10), nullable=False, unique=True)
+    stock_code = Column(String(10), nullable=False)
     stock_name = Column(String(50))
     qty = Column(Float, nullable=False)      # KR: 정수, US: 소수점 수량
     avg_price = Column(Float, nullable=False)

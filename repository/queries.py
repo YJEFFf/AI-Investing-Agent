@@ -10,10 +10,11 @@ async def get_open_positions(session: AsyncSession) -> list[Position]:
     return result.scalars().all()
 
 
-async def get_position(session: AsyncSession, stock_code: str) -> Position | None:
-    result = await session.execute(
-        select(Position).where(Position.stock_code == stock_code)
-    )
+async def get_position(session: AsyncSession, stock_code: str, market: str | None = None) -> Position | None:
+    query = select(Position).where(Position.stock_code == stock_code)
+    if market:
+        query = query.where(Position.market == market)
+    result = await session.execute(query)
     return result.scalar_one_or_none()
 
 
@@ -22,21 +23,24 @@ async def save_position(session: AsyncSession, position: Position) -> None:
     await session.commit()
 
 
-async def delete_position(session: AsyncSession, stock_code: str) -> None:
-    position = await get_position(session, stock_code)
+async def delete_position(session: AsyncSession, stock_code: str, market: str | None = None) -> None:
+    position = await get_position(session, stock_code, market=market)
     if position:
         await session.delete(position)
         await session.commit()
 
 
-async def get_open_trade(session: AsyncSession, stock_code: str) -> Trade | None:
-    result = await session.execute(
+async def get_open_trade(session: AsyncSession, stock_code: str, market: str | None = None) -> Trade | None:
+    query = (
         select(Trade)
         .where(Trade.stock_code == stock_code)
         .where(Trade.status == "open")
         .order_by(Trade.entry_at.desc())
         .limit(1)
     )
+    if market:
+        query = query.where(Trade.market == market)
+    result = await session.execute(query)
     return result.scalar_one_or_none()
 
 
