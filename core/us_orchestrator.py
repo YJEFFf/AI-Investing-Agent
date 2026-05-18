@@ -78,10 +78,6 @@ class USOrchestrator:
             logger.warning(f"US 잔고 조회 실패 — 캐시 사용: {e}")
             balance = self._cached_balance
 
-        if balance.get("available_usd", 0) < 1.0:
-            logger.info(f"US 가용 잔고 없음 (${balance.get('available_usd', 0):.2f}) — 분석 스킵")
-            return
-
         self._watchlist = self._load_watchlist()
         logger.info(f"US 워치리스트: {len(self._watchlist)}개 종목")
 
@@ -94,13 +90,11 @@ class USOrchestrator:
 
         if self._nasdaq_df is not None:
             regime = detect_regime(self._nasdaq_df)
-            if regime == MarketRegime.TRENDING_DOWN:
-                logger.info("US 하락장 레짐 — 스윙 매수 전체 스킵")
-                return
         else:
             regime = MarketRegime.RANGING
 
-        # 일봉 OHLCV 로드
+        # 일봉 OHLCV 로드 + TA 필터링은 잔고 유무와 무관하게 항상 실행
+        # → _analyze_and_reenter가 당일 최신 데이터를 사용할 수 있도록 보장
         for stock in self._watchlist:
             ticker = stock["ticker"]
             try:
@@ -127,6 +121,15 @@ class USOrchestrator:
             f"US TA 필터링: {len(self._watchlist)}개 → 상위 {len(self._ta_filtered_watchlist)}개 선정"
             + (f" (TA {scored[len(self._ta_filtered_watchlist)-1][1]:.1f}~{scored[0][1]:.1f}점)" if scored else "")
         )
+
+        # Vision 분석은 가용 잔고가 있을 때만 실행
+        if balance.get("available_usd", 0) < 1.0:
+            logger.info(f"US 가용 잔고 없음 (${balance.get('available_usd', 0):.2f}) — Vision 분석 스킵 (OHLCV/TA는 갱신 완료)")
+            return
+
+        if regime == MarketRegime.TRENDING_DOWN:
+            logger.info("US 하락장 레짐 — 스윙 매수 전체 스킵")
+            return
 
         async with AsyncSessionLocal() as session:
             open_positions = await get_open_positions_by_market(session, "US")
