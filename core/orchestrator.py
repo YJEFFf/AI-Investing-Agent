@@ -15,8 +15,10 @@ from repository.models import Signal
 from repository.queries import (
     get_open_positions_by_market, get_position, get_today_realized_pnl_by_market, save_signal,
     get_today_trade_count_by_market, get_today_signal_count_by_market, get_today_sell_count_by_market,
+    get_win_rate_stats,
 )
 from risk.portfolio_guard import portfolio_guard
+from risk.position_sizer import calc_position_size
 from risk.stop_loss import should_stop, update_trailing_stop
 from strategy.multi_agent_strategy import multi_agent_strategy
 from strategy.regime_detector import detect_regime, MarketRegime
@@ -185,11 +187,7 @@ class Orchestrator:
             today_pnl = await get_today_realized_pnl_by_market(session, "KR")
             daily_pnl_pct = today_pnl / balance["total_eval"] if balance["total_eval"] > 0 else 0.0
 
-            # 잔고를 매수 대상 종목 수로 균등 분할 (이미 보유 중인 종목 제외)
-            eligible_codes = [c for c in self._pending_signals if c not in already_held]
-            n = max(1, len(eligible_codes))
-            per_stock_budget = int(balance["available_cash"] / n)
-            logger.info(f"시드 균등 분할: {balance['available_cash']:,}원 ÷ {n}종목 = {per_stock_budget:,}원/종목")
+            win_stats = await get_win_rate_stats(session)
 
             for code, signal in list(self._pending_signals.items()):
                 if code in already_held:
@@ -210,10 +208,15 @@ class Orchestrator:
                     logger.warning(f"현재가 조회 실패 {code}: {e}")
                     continue
 
-                # 균등 예산과 실제 가용 잔고 중 작은 값으로 수량 계산 (이전 체결 후 잔고 감소 반영)
-                # 시가 매수: 09:00 조회가 ≠ 실제 체결가 (개장 직후 2~5% 갭 빈번) → 12% 버퍼
-                effective_budget = min(per_stock_budget, balance["available_cash"])
-                qty = int(effective_budget * 0.88) // current_price
+                # half-Kelly × confidence 비율로 수량 계산 (최대 25% 캡)
+                qty = calc_position_size(
+                    available_cash=balance["available_cash"],
+                    current_price=current_price,
+                    position_ratio=signal.position_ratio,
+                    win_rate=win_stats["win_rate"],
+                    avg_win_pct=win_stats["avg_win_pct"],
+                    avg_loss_pct=win_stats["avg_loss_pct"],
+                )
 
                 if qty <= 0:
                     logger.info(f"매수 수량 0 → 스킵: {code} (예산 {per_stock_budget:,}원, 현재가 {current_price:,}원)")
