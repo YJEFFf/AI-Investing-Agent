@@ -40,6 +40,17 @@ class StockScreener:
             logger.warning("거래대금 순위 조회 실패 — 스크리닝 건너뜀")
             return []
 
+        # ETF·ETN·리츠 제외: 코드가 순수 6자리 숫자인 종목만 허용
+        # ETN은 Q/E 등 문자 포함, ETF 중 일부도 특수문자 포함
+        # 이름에 ETF·ETN·TIGER·KODEX 등 포함 시 추가 제외
+        _ETF_KEYWORDS = ("ETF", "ETN", "TIGER", "KODEX", "KBSTAR", "HANARO",
+                         "ARIRANG", "ACE", "KOSEF", "SOL ", "TIMEFOLIO", "리츠")
+        candidates = [
+            c for c in candidates
+            if c["code"].isdigit() and len(c["code"]) == 6
+            and not any(kw in c["name"] for kw in _ETF_KEYWORDS)
+        ]
+
         logger.info(f"스크리너: {len(candidates)}개 후보 TA 점수 계산 중...")
         sem = asyncio.Semaphore(10)
 
