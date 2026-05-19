@@ -189,7 +189,12 @@ class Orchestrator:
 
             win_stats = await get_win_rate_stats(session)
 
-            for code, signal in list(self._pending_signals.items()):
+            sorted_signals = sorted(
+                self._pending_signals.items(),
+                key=lambda x: x[1].chart_confidence,
+                reverse=True,
+            )
+            for code, signal in sorted_signals:
                 if code in already_held:
                     logger.debug(f"{code} 이미 보유 중 — 스킵")
                     continue
