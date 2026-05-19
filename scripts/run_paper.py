@@ -32,16 +32,6 @@ if not settings.is_paper:
     sys.exit(1)
 
 from core.orchestrator import orchestrator
-from core.us_orchestrator import us_orchestrator
-
-
-async def _main():
-    await asyncio.gather(
-        orchestrator.run(),
-        us_orchestrator.run(),
-        return_exceptions=True,
-    )
-
 
 if __name__ == "__main__":
-    asyncio.run(_main())
+    asyncio.run(orchestrator.run())
