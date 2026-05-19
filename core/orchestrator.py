@@ -224,7 +224,7 @@ class Orchestrator:
                 )
 
                 if qty <= 0:
-                    logger.info(f"매수 수량 0 → 스킵: {code} (예산 {per_stock_budget:,}원, 현재가 {current_price:,}원)")
+                    logger.info(f"매수 수량 0 → 스킵: {code} (현재가 {current_price:,}원, ratio={signal.position_ratio:.2f})")
                     continue
 
                 stock_name = next((s["name"] for s in self._watchlist if s["code"] == code), code)
