@@ -455,14 +455,17 @@ class Orchestrator:
         logger.info("스케줄러 시작됨")
 
         now = datetime.now()
+        t_830 = now.replace(hour=8, minute=30, second=0, microsecond=0)
+        t_900 = now.replace(hour=9, minute=0, second=0, microsecond=0)
         market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
         if now < market_close:
-            if now >= now.replace(hour=8, minute=30, second=0, microsecond=0):
-                logger.info("08:30 이후 시작 — pre_market_setup 즉시 실행")
+            if t_830 <= now < t_900:
+                # 08:30~09:00 사이 시작: 장전 분석 후 스케줄러가 09:00에 market_open 실행
+                logger.info("08:30~09:00 사이 시작 — pre_market_setup 즉시 실행")
                 await self.pre_market_setup()
-            if now >= now.replace(hour=9, minute=0, second=0, microsecond=0):
-                logger.info("09:00 이후 시작 — market_open 즉시 실행")
-                await self.market_open()
+            elif now >= t_900:
+                # 09:00 이후 재시작: 장중 재분석하지 않음 (기존 포지션 폴링만 유지)
+                logger.info("09:00 이후 시작 — 장중 재분석 스킵, 폴링으로 포지션 관리만 진행")
 
         if not settings.is_paper:
             asyncio.create_task(kis_ws.connect_and_run())
