@@ -10,12 +10,12 @@ def create_scheduler(orchestrator) -> AsyncIOScheduler:
 
     scheduler.add_job(
         orchestrator.pre_market_setup,
-        CronTrigger(hour=8, minute=30, day_of_week="mon-fri"),
+        CronTrigger(hour=9, minute=0, day_of_week="mon-fri"),
         id="pre_market_setup",
     )
     scheduler.add_job(
         orchestrator.market_open,
-        CronTrigger(hour=9, minute=0, day_of_week="mon-fri"),
+        CronTrigger(hour=9, minute=10, day_of_week="mon-fri"),
         id="market_open",
     )
     scheduler.add_job(
