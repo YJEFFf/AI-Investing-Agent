@@ -44,8 +44,9 @@ class StockScreener:
         # ETN은 Q/E 등 문자 포함, ETF 중 일부도 특수문자 포함
         # 이름에 ETF·ETN·TIGER·KODEX 등 포함 시 추가 제외
         _EXCLUDE_KEYWORDS = ("ETF", "ETN", "TIGER", "KODEX", "KBSTAR", "HANARO",
-                              "ARIRANG", "ACE", "KOSEF", "SOL ", "TIMEFOLIO", "리츠",
-                              "스팩", "SPAC")
+                              "ARIRANG", "ACE", "KOSEF", "SOL ", "TIMEFOLIO", "RISE ",
+                              "PLUS ", "KIWOOM ", "리츠", "스팩", "SPAC", "인버스", "채권",
+                              "선물", "TR ", "레버리지")
         candidates = [
             c for c in candidates
             if c["code"].isdigit() and len(c["code"]) == 6
