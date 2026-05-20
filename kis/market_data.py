@@ -143,9 +143,10 @@ class KISMarketData:
 
 
     async def get_volume_rank(self, count: int = 200) -> list[dict]:
-        """거래대금 순위 상위 종목 조회 — KOSPI·KOSDAQ 각각 호출 후 합산.
-        KIS API는 단일 호출당 약 30개만 반환하므로 시장별로 나눠 조회한다."""
-        async def _fetch_market(blng_cls: str) -> list[dict]:
+        """거래대금 순위 상위 종목 조회.
+        KIS API는 단일 호출당 약 30개만 반환하므로
+        KOSPI/KOSDAQ × 대형/중형/소형 6개 조합으로 나눠 조회 후 합산한다."""
+        async def _fetch(blng_cls: str, div_cls: str) -> list[dict]:
             try:
                 data = await kis_client.get(
                     "/uapi/domestic-stock/v1/quotations/volume-rank",
@@ -154,8 +155,8 @@ class KISMarketData:
                         "FID_COND_MRKT_DIV_CODE": "J",
                         "FID_COND_SCR_DIV_CODE": "20171",
                         "FID_INPUT_ISCD": "0000",
-                        "FID_DIV_CLS_CODE": "0",
-                        "FID_BLNG_CLS_CODE": blng_cls,  # 1=KOSPI, 2=KOSDAQ
+                        "FID_DIV_CLS_CODE": div_cls,   # 1=대형 2=중형 3=소형
+                        "FID_BLNG_CLS_CODE": blng_cls,  # 1=KOSPI 2=KOSDAQ
                         "FID_TRGT_CLS_CODE": "111111111",
                         "FID_TRGT_EXLS_CLS_CODE": "0000000000",
                         "FID_INPUT_PRICE_1": "1000",
@@ -171,20 +172,23 @@ class KISMarketData:
                     if r.get("mksc_shrn_iscd")
                 ]
             except Exception as e:
-                logger.warning(f"거래대금 순위 조회 실패 (blng={blng_cls}): {e}")
+                logger.warning(f"거래대금 순위 조회 실패 (blng={blng_cls}, div={div_cls}): {e}")
                 return []
 
-        kospi, kosdaq = await asyncio.gather(_fetch_market("1"), _fetch_market("2"))
+        results = await asyncio.gather(
+            _fetch("1", "1"), _fetch("1", "2"), _fetch("1", "3"),  # KOSPI 대/중/소
+            _fetch("2", "1"), _fetch("2", "2"), _fetch("2", "3"),  # KOSDAQ 대/중/소
+        )
 
-        # 중복 제거 후 순서 유지 (KOSPI 우선, KOSDAQ 추가)
         seen: set[str] = set()
         merged: list[dict] = []
-        for item in kospi + kosdaq:
-            if item["code"] not in seen:
-                seen.add(item["code"])
-                merged.append(item)
+        for batch in results:
+            for item in batch:
+                if item["code"] not in seen:
+                    seen.add(item["code"])
+                    merged.append(item)
 
-        logger.info(f"거래대금 순위: KOSPI {len(kospi)}개 + KOSDAQ {len(kosdaq)}개 = 합산 {len(merged)}개")
+        logger.info(f"거래대금 순위: {len(merged)}개 수집 (6개 구간 합산)")
         return merged[:count]
 
 
