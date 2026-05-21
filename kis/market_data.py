@@ -144,7 +144,7 @@ class KISMarketData:
 
     async def get_volume_rank(self, count: int = 200) -> list[dict]:
         """거래대금 순위 상위 종목 조회.
-        KIS API는 단일 호출당 약 30개만 반환하므로 KOSPI/KOSDAQ 2번 호출 후 합산한다."""
+        KOSPI/KOSDAQ 각 30개씩 호출 후 acml_tr_pbmn(누적 거래대금) 기준으로 재정렬."""
         async def _fetch(blng_cls: str) -> list[dict]:
             try:
                 data = await kis_client.get(
@@ -166,7 +166,11 @@ class KISMarketData:
                 )
                 rows = data.get("output", [])
                 return [
-                    {"code": r["mksc_shrn_iscd"], "name": r["hts_kor_isnm"]}
+                    {
+                        "code": r["mksc_shrn_iscd"],
+                        "name": r["hts_kor_isnm"],
+                        "tr_pbmn": int(r.get("acml_tr_pbmn", 0)),
+                    }
                     for r in rows
                     if r.get("mksc_shrn_iscd")
                 ]
@@ -183,8 +187,11 @@ class KISMarketData:
                 seen.add(item["code"])
                 merged.append(item)
 
-        logger.info(f"거래대금 순위: {len(merged)}개 수집 (KOSPI {len(kospi)} + KOSDAQ {len(kosdaq)})")
-        return merged[:count]
+        merged.sort(key=lambda x: x["tr_pbmn"], reverse=True)
+        result = [{"code": x["code"], "name": x["name"]} for x in merged]
+
+        logger.info(f"거래대금 순위: {len(result)}개 수집 (KOSPI {len(kospi)} + KOSDAQ {len(kosdaq)}, 거래대금 내림차순 정렬)")
+        return result[:count]
 
 
 market_data = KISMarketData()
