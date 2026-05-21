@@ -49,9 +49,9 @@ class Orchestrator:
             return yaml.safe_load(f)
 
     async def pre_market_setup(self) -> None:
-        """09:00 장 시작 — 일봉 데이터 로드 + 차트 이미지 분석"""
+        """15:40 장 마감 후 분석 — 일봉 데이터 로드 + 차트 이미지 분석 → 다음날 09:00 매수 실행"""
         if not is_trading_day():
-            logger.info("휴장일 — 장전 준비 스킵")
+            logger.info("휴장일 — 장 마감 후 분석 스킵")
             return
         logger.info("장전 준비 시작")
         self._pending_signals.clear()
@@ -146,7 +146,7 @@ class Orchestrator:
         await notify_pre_market_summary(len(self._watchlist), signal_list)
 
     async def market_open(self) -> None:
-        """09:10 매수 신호 실행"""
+        """09:00 장 시작 — 전일 분석 결과 매수 실행"""
         if not is_trading_day():
             logger.info("휴장일 — 장 시작 스킵")
             return
@@ -455,17 +455,18 @@ class Orchestrator:
         logger.info("스케줄러 시작됨")
 
         now = datetime.now()
-        t_900 = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        t_910 = now.replace(hour=9, minute=10, second=0, microsecond=0)
-        market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
-        if now < market_close:
-            if t_900 <= now < t_910:
-                # 09:00~09:10 사이 시작: 분석 즉시 실행 후 스케줄러가 09:10에 market_open 실행
-                logger.info("09:00~09:10 사이 시작 — pre_market_setup 즉시 실행")
-                await self.pre_market_setup()
-            elif now >= t_910:
-                # 09:10 이후 재시작: 장중 재분석하지 않음 (기존 포지션 폴링만 유지)
-                logger.info("09:10 이후 시작 — 장중 재분석 스킵, 폴링으로 포지션 관리만 진행")
+        t_1540 = now.replace(hour=15, minute=40, second=0, microsecond=0)
+        t_1530 = now.replace(hour=15, minute=30, second=0, microsecond=0)
+        if now >= t_1540:
+            # 15:40 이후 시작: 당일 분석 즉시 실행
+            logger.info("15:40 이후 시작 — pre_market_setup 즉시 실행")
+            await self.pre_market_setup()
+        elif t_1530 <= now < t_1540:
+            # 15:30~15:40 사이: market_close 처리 후 스케줄러가 15:40에 분석 실행
+            logger.info("15:30~15:40 사이 시작 — 스케줄러 대기")
+        else:
+            # 장중(09:00~15:30) 또는 장전: 재분석 스킵, 포지션 관리만
+            logger.info("장중/장전 시작 — 재분석 스킵, 폴링으로 포지션 관리만 진행")
 
         if not settings.is_paper:
             asyncio.create_task(kis_ws.connect_and_run())
