@@ -157,7 +157,7 @@ class KISMarketData:
                         "FID_DIV_CLS_CODE": "0",
                         "FID_BLNG_CLS_CODE": blng_cls,  # 1=KOSPI 2=KOSDAQ
                         "FID_TRGT_CLS_CODE": "111111111",
-                        "FID_TRGT_EXLS_CLS_CODE": "0000000000",
+                        "FID_TRGT_EXLS_CLS_CODE": "0000000011",  # ETF/ETN 제외
                         "FID_INPUT_PRICE_1": "1000",
                         "FID_INPUT_PRICE_2": "500000",
                         "FID_VOL_CNT": "0",
