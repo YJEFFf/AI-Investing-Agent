@@ -299,6 +299,39 @@ class Orchestrator:
                 pnl=int(pnl),
             )
 
+
+    async def _reconcile_positions(self, db_codes: set) -> None:
+        """KIS 실제 잔고와 DB open 포지션 비교 — 수동 매도 자동 closed 처리"""
+        try:
+            kis_positions = await kis_account.get_positions()
+            kis_codes = {p["code"] for p in kis_positions}
+            manually_sold = db_codes - kis_codes
+            if not manually_sold:
+                return
+            from kis.market_data import market_data as md
+            for code in manually_sold:
+                async with AsyncSessionLocal() as session:
+                    pos = await get_position(session, code)
+                    if pos is None:
+                        continue
+                    try:
+                        info = await md.get_current_price(code)
+                        exit_price = info["price"]
+                    except Exception:
+                        exit_price = int(pos.avg_price)
+                    pnl = (exit_price - int(pos.avg_price)) * int(pos.qty)
+                    pnl_pct = (exit_price / int(pos.avg_price) - 1) if pos.avg_price else 0.0
+                    pos.status = "closed"
+                    pos.exit_at = datetime.now()
+                    pos.exit_price = exit_price
+                    pos.profit_loss = pnl
+                    pos.profit_loss_pct = pnl_pct
+                    pos.exit_reason = "manual_sell"
+                    await session.commit()
+                    logger.info(f"수동 매도 감지 → DB 정리: {code} @ {exit_price:,}원 (추정), 손익 {pnl:+,}원")
+        except Exception as e:
+            logger.debug(f"포지션 대사 실패: {e}")
+
     async def _polling_loop(self) -> None:
         """1분마다 보유 종목 현재가 조회 → 익절/손절 체크 (스윙 모드)"""
         from kis.market_data import market_data as md
@@ -320,6 +353,9 @@ class Orchestrator:
             async with AsyncSessionLocal() as session:
                 held_positions = await get_open_positions_by_market(session, "KR")
             held_codes = {pos.stock_code for pos in held_positions}
+
+            # KIS 실제 잔고와 DB 비교 — 수동 매도 감지
+            await self._reconcile_positions(held_codes)
 
             tasks = [_check_with_sem(code) for code in held_codes]
             await asyncio.gather(*tasks, return_exceptions=True)
