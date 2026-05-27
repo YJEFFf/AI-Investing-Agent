@@ -244,6 +244,10 @@ class Orchestrator:
                     logger.info(f"매수 수량 0 → 스킵: {code} (현재가 {current_price:,}원, ratio={signal.position_ratio:.2f})")
                     continue
 
+                if qty * current_price < 1_000_000:
+                    logger.info(f"최소 투자금액 미달 → 스킵: {code} ({qty}주 × {current_price:,}원 = {qty * current_price:,}원)")
+                    continue
+
                 stock_name = next((s["name"] for s in self._watchlist if s["code"] == code), code)
                 signal_record = Signal(
                     stock_code=code,

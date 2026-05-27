@@ -19,9 +19,6 @@ class PortfolioGuard:
         daily_pnl_pct: float,
     ) -> tuple[bool, str]:
         """신규 진입 가능 여부 및 이유 반환"""
-        if open_positions >= settings.max_open_positions:
-            return False, f"최대 보유 종목 {settings.max_open_positions}개 도달"
-
         if daily_pnl_pct <= -settings.daily_loss_cap:
             return False, f"일일 손실 한도 -{settings.daily_loss_cap*100:.0f}% 도달"
 
