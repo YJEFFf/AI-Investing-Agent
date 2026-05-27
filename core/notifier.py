@@ -39,8 +39,11 @@ async def notify_buy(code: str, name: str, qty: int, price: int,
 
 async def notify_sell(code: str, name: str, qty: int, price: int,
                       reason: str, pnl: int) -> None:
+    if reason == "stop_loss":
+        reason_kr = "트레일링 익절" if pnl >= 0 else "손절"
+    else:
+        reason_kr = {"take_profit": "익절", "partial_take_profit": "절반 익절"}.get(reason, reason)
     emoji = "✅" if pnl >= 0 else "🔴"
-    reason_kr = {"take_profit": "익절", "stop_loss": "손절", "partial_take_profit": "절반 익절"}.get(reason, reason)
     text = (
         f"{emoji} <b>매도 체결 — {reason_kr}</b>\n"
         f"종목: {name} ({code})\n"
@@ -73,7 +76,7 @@ async def notify_pre_market_summary(
 
 
 async def notify_sell_fail(code: str, name: str, reason: str, will_retry: bool) -> None:
-    reason_kr = {"take_profit": "전량 익절", "stop_loss": "손절", "partial_take_profit": "절반 익절"}.get(reason, reason)
+    reason_kr = {"take_profit": "전량 익절", "stop_loss": "스탑 청산", "partial_take_profit": "절반 익절"}.get(reason, reason)
     if will_retry:
         status = "5분 후 자동 재시도 예정"
         emoji = "⚠️"
