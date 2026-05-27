@@ -29,13 +29,17 @@ class Signal(Base):
     market = Column(String(2), default="KR", nullable=False)  # KR | US
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     stock_code = Column(String(10), nullable=False)
+    stock_name = Column(String(50))
     ta_score = Column(Float, nullable=False)
     chart_verdict = Column(String(10))
     chart_confidence = Column(Float)
     risk_level = Column(String(10))
     final_action = Column(String(10), nullable=False)
     position_size_pct = Column(Float)
+    stop_pct = Column(Float)
+    target_pct = Column(Float)
     reasoning = Column(Text)
+    pending = Column(Boolean, default=False)
 
 
 class Trade(Base):

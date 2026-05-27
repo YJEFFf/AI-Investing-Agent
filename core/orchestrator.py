@@ -15,7 +15,7 @@ from repository.models import Signal
 from repository.queries import (
     get_open_positions_by_market, get_position, get_today_realized_pnl_by_market, save_signal,
     get_today_trade_count_by_market, get_today_signal_count_by_market, get_today_sell_count_by_market,
-    get_win_rate_stats,
+    get_win_rate_stats, get_pending_signals, clear_pending_signals,
 )
 from risk.portfolio_guard import portfolio_guard
 from risk.position_sizer import calc_position_size
@@ -55,6 +55,8 @@ class Orchestrator:
             return
         logger.info("장전 준비 시작")
         self._pending_signals.clear()
+        async with AsyncSessionLocal() as session:
+            await clear_pending_signals(session)
 
         try:
             balance = await kis_account.get_balance()
@@ -127,6 +129,21 @@ class Orchestrator:
                     if signal.action == "buy":
                         self._pending_signals[code] = signal
                         logger.info(f"[{code}] 스윙 매수 신호 → 대기열 등록 ({signal.reasoning[:60]})")
+                        async with AsyncSessionLocal() as sig_session:
+                            await save_signal(sig_session, Signal(
+                                stock_code=code,
+                                stock_name=name,
+                                ta_score=signal.ta_score,
+                                chart_verdict=signal.chart_verdict,
+                                chart_confidence=signal.chart_confidence,
+                                risk_level=signal.risk_level,
+                                final_action=signal.action,
+                                position_size_pct=signal.position_ratio,
+                                stop_pct=signal.stop_pct,
+                                target_pct=signal.target_pct,
+                                reasoning=signal.reasoning,
+                                pending=True,
+                            ))
                 except Exception as e:
                     logger.warning(f"장전 분석 실패 {code}: {e}")
 
@@ -260,6 +277,8 @@ class Orchestrator:
                 balance = self._cached_balance
 
         self._pending_signals.clear()
+        async with AsyncSessionLocal() as session:
+            await clear_pending_signals(session)
 
     async def market_close(self) -> None:
         """15:30 장 종료"""
@@ -299,6 +318,31 @@ class Orchestrator:
                 pnl=int(pnl),
             )
 
+
+    async def _restore_pending_signals(self) -> None:
+        """재시작 시 DB에서 오늘 미실행 pending 신호 복원"""
+        try:
+            async with AsyncSessionLocal() as session:
+                pending = await get_pending_signals(session)
+            if not pending:
+                return
+            for sig in pending:
+                self._pending_signals[sig.stock_code] = TradeSignal(
+                    action="buy",
+                    position_ratio=sig.position_size_pct or 0.4,
+                    stop_price=0,
+                    stop_type="trailing",
+                    reasoning=sig.reasoning or "",
+                    ta_score=sig.ta_score or 0.0,
+                    risk_level=sig.risk_level or "medium",
+                    chart_verdict=sig.chart_verdict or "buy",
+                    chart_confidence=sig.chart_confidence or 0.0,
+                    stop_pct=sig.stop_pct or settings.swing_stop_pct,
+                    target_pct=sig.target_pct or 0.07,
+                )
+            logger.info(f"DB에서 pending 신호 {len(pending)}개 복원: {[s.stock_code for s in pending]}")
+        except Exception as e:
+            logger.warning(f"pending 신호 복원 실패: {e}")
 
     async def _reconcile_positions(self, db_codes: set) -> None:
         """KIS 실제 잔고와 DB open 포지션 비교 — 수동 매도 자동 closed 처리"""
@@ -503,6 +547,7 @@ class Orchestrator:
         else:
             # 장중(09:00~15:30) 또는 장전: 재분석 스킵, 포지션 관리만
             logger.info("장중/장전 시작 — 재분석 스킵, 폴링으로 포지션 관리만 진행")
+            await self._restore_pending_signals()
 
         if not settings.is_paper:
             asyncio.create_task(kis_ws.connect_and_run())

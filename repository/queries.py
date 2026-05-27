@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from repository.models import Trade, Position, DailyPnL, Signal
@@ -151,6 +151,32 @@ async def get_today_sell_count_by_market(session: AsyncSession, market: str) -> 
         .where(func.date(Trade.exit_at) == today)
     )
     return result.scalar() or 0
+
+
+async def get_pending_signals(session: AsyncSession, market: str = "KR") -> list[Signal]:
+    """오늘 날짜의 미실행 pending 신호 조회"""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(Signal)
+        .where(Signal.market == market)
+        .where(Signal.pending == True)
+        .where(func.date(Signal.created_at) == today)
+        .order_by(Signal.chart_confidence.desc())
+    )
+    return result.scalars().all()
+
+
+async def clear_pending_signals(session: AsyncSession, market: str = "KR") -> None:
+    """오늘 pending 신호 전체 실행 완료(만료) 처리"""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    await session.execute(
+        update(Signal)
+        .where(Signal.market == market)
+        .where(Signal.pending == True)
+        .where(func.date(Signal.created_at) == today)
+        .values(pending=False)
+    )
+    await session.commit()
 
 
 async def get_win_rate_stats(session: AsyncSession, limit: int = 50) -> dict:
