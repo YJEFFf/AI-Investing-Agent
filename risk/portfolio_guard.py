@@ -14,7 +14,6 @@ class PortfolioGuard:
 
     def allows_new_entry(
         self,
-        open_positions: int,
         current_balance: int,
         daily_pnl_pct: float,
     ) -> tuple[bool, str]:

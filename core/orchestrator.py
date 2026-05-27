@@ -217,7 +217,7 @@ class Orchestrator:
                     continue
 
                 allowed, reason = portfolio_guard.allows_new_entry(
-                    open_pos_count, balance["total_eval"], daily_pnl_pct
+                    balance["total_eval"], daily_pnl_pct
                 )
                 if not allowed:
                     logger.info(f"포트폴리오 한도 도달 — 이후 신호 중단: {reason}")
