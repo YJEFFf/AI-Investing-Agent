@@ -91,6 +91,16 @@ async def notify_sell_fail(code: str, name: str, reason: str, will_retry: bool) 
     await _send(text)
 
 
+async def notify_skip_min_amount(code: str, name: str, qty: int, price: int, amount: int) -> None:
+    text = (
+        f"⚠️ <b>최소 금액 미달 — 매수 스킵</b>\n"
+        f"종목: {name} ({code})\n"
+        f"계산 수량: {qty:,}주 × {price:,}원 = {amount:,}원\n"
+        f"기준: 80만원 미달"
+    )
+    await _send(text)
+
+
 async def notify_daily_summary(signals: int, trades: int, sells: int, pnl: int) -> None:
     text = (
         f"📊 <b>오늘 결과</b>\n"
