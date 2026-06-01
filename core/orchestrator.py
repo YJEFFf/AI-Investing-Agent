@@ -43,7 +43,6 @@ class Orchestrator:
         self._cached_balance: dict = {"available_cash": 0, "total_eval": 0, "unrealized_pnl": 0}
         self._sell_fail_time: dict[str, float] = {}             # 최초 매도 실패 시각 (monotonic) — 5분 후 재시도
         self._sell_perm_lock: set[str] = set()                 # 재시도 후에도 실패 → 장 마감까지 영구 차단
-        self._analysis_lock = asyncio.Lock()                   # 분석 동시 실행 방지
 
     def _load_watchlist_config(self) -> dict:
         with open(_WATCHLIST_PATH) as f:
@@ -54,14 +53,6 @@ class Orchestrator:
         if not is_trading_day():
             logger.info("휴장일 — 장 마감 후 분석 스킵")
             return
-        if self._analysis_lock.locked():
-            logger.info("분석 중복 실행 방지 — 이미 실행 중")
-            return
-        async with self._analysis_lock:
-            await self._run_analysis()
-
-    async def _run_analysis(self) -> None:
-        """실제 분석 로직 (lock 내부에서 실행)"""
         logger.info("장전 준비 시작")
         self._pending_signals.clear()
         async with AsyncSessionLocal() as session:
@@ -558,15 +549,15 @@ class Orchestrator:
         logger.info("스케줄러 시작됨")
 
         now = datetime.now()
-        t_1540 = now.replace(hour=15, minute=40, second=0, microsecond=0)
+        t_1600 = now.replace(hour=16, minute=0, second=0, microsecond=0)
         t_1530 = now.replace(hour=15, minute=30, second=0, microsecond=0)
-        if now >= t_1540:
-            # 15:40 이후 시작: 당일 분석 즉시 실행
-            logger.info("15:40 이후 시작 — pre_market_setup 즉시 실행")
-            await self.pre_market_setup()
-        elif t_1530 <= now < t_1540:
-            # 15:30~15:40 사이: market_close 처리 후 스케줄러가 15:40에 분석 실행
-            logger.info("15:30~15:40 사이 시작 — 스케줄러 대기")
+        if now >= t_1600:
+            # 16:00 이후 시작: 당일 분석 즉시 실행
+            logger.info("16:00 이후 시작 — 즉시 분석 실행")
+            await self.retry_analysis_if_needed()
+        elif t_1530 <= now < t_1600:
+            # 15:30~16:00 사이: 스케줄러가 16:00에 분석 실행
+            logger.info("15:30~16:00 사이 시작 — 스케줄러 대기")
         else:
             # 장중(09:00~15:30) 또는 장전: 재분석 스킵, 포지션 관리만
             logger.info("장중/장전 시작 — 재분석 스킵, 폴링으로 포지션 관리만 진행")

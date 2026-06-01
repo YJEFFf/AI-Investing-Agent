@@ -29,11 +29,6 @@ def create_scheduler(orchestrator) -> AsyncIOScheduler:
         id="post_market",
     )
     scheduler.add_job(
-        orchestrator.pre_market_setup,
-        CronTrigger(hour=15, minute=40, day_of_week="mon-fri"),
-        id="pre_market_setup",
-    )
-    scheduler.add_job(
         orchestrator.retry_analysis_if_needed,
         CronTrigger(hour="16,17,18,19,20,21,22,23,0", minute=0, day_of_week="mon-fri"),
         id="retry_analysis",
