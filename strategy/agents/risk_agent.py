@@ -16,8 +16,6 @@ class RiskManagerAgent(BaseAgent):
         risk_flags = []
 
         # 포트폴리오 상태 체크
-        if open_positions >= settings.max_open_positions:
-            risk_flags.append("max_positions_reached")
         if daily_pnl_pct <= -settings.daily_loss_cap:
             risk_flags.append("daily_loss_cap_hit")
         if drawdown_pct >= settings.max_drawdown_pct:
