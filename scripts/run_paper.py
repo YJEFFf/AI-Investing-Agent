@@ -20,10 +20,7 @@ _file_handler = TimedRotatingFileHandler(
 )
 _file_handler.setFormatter(_fmt)
 
-_console_handler = logging.StreamHandler()
-_console_handler.setFormatter(_fmt)
-
-logging.basicConfig(level=logging.INFO, handlers=[_file_handler, _console_handler])
+logging.basicConfig(level=logging.INFO, handlers=[_file_handler])
 
 from config.settings import settings
 
