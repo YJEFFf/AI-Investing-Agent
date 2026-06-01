@@ -43,6 +43,7 @@ class Orchestrator:
         self._cached_balance: dict = {"available_cash": 0, "total_eval": 0, "unrealized_pnl": 0}
         self._sell_fail_time: dict[str, float] = {}             # 최초 매도 실패 시각 (monotonic) — 5분 후 재시도
         self._sell_perm_lock: set[str] = set()                 # 재시도 후에도 실패 → 장 마감까지 영구 차단
+        self._analysis_lock = asyncio.Lock()                   # 분석 동시 실행 방지
 
     def _load_watchlist_config(self) -> dict:
         with open(_WATCHLIST_PATH) as f:
@@ -53,6 +54,14 @@ class Orchestrator:
         if not is_trading_day():
             logger.info("휴장일 — 장 마감 후 분석 스킵")
             return
+        if self._analysis_lock.locked():
+            logger.info("분석 중복 실행 방지 — 이미 실행 중")
+            return
+        async with self._analysis_lock:
+            await self._run_analysis()
+
+    async def _run_analysis(self) -> None:
+        """실제 분석 로직 (lock 내부에서 실행)"""
         logger.info("장전 준비 시작")
         self._pending_signals.clear()
         async with AsyncSessionLocal() as session:
@@ -322,6 +331,8 @@ class Orchestrator:
 
     async def retry_analysis_if_needed(self) -> None:
         """16:00~00:00 매시 정각 — pending 신호 3개 미만이면 재분석"""
+        if not is_trading_day():
+            return
         async with AsyncSessionLocal() as session:
             pending = await get_pending_signals(session)
         count = len(pending)
