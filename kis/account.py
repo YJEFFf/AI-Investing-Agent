@@ -1,3 +1,4 @@
+import asyncio
 from config.settings import settings
 from kis.rest_client import kis_client
 
@@ -10,23 +11,31 @@ class KISAccount:
         acnt_no = account_no.split("-")[0]
 
         tr_id = "VTTC8434R" if settings.is_paper else "TTTC8434R"
-        data = await kis_client.get(
-            "/uapi/domestic-stock/v1/trading/inquire-balance",
-            tr_id=tr_id,
-            params={
-                "CANO": acnt_no,
-                "ACNT_PRDT_CD": acnt_prdt_cd,
-                "AFHR_FLPR_YN": "N",
-                "OFL_YN": "N",
-                "INQR_DVSN": "02",
-                "UNPR_DVSN": "01",
-                "FUND_STTL_ICLD_YN": "N",
-                "FNCG_AMT_AUTO_RDPT_YN": "N",
-                "PRCS_DVSN": "00",
-                "CTX_AREA_FK100": "",
-                "CTX_AREA_NK100": "",
-            },
-        )
+        params = {
+            "CANO": acnt_no,
+            "ACNT_PRDT_CD": acnt_prdt_cd,
+            "AFHR_FLPR_YN": "N",
+            "OFL_YN": "N",
+            "INQR_DVSN": "02",
+            "UNPR_DVSN": "01",
+            "FUND_STTL_ICLD_YN": "N",
+            "FNCG_AMT_AUTO_RDPT_YN": "N",
+            "PRCS_DVSN": "00",
+            "CTX_AREA_FK100": "",
+            "CTX_AREA_NK100": "",
+        }
+        for attempt in range(3):
+            try:
+                data = await kis_client.get(
+                    "/uapi/domestic-stock/v1/trading/inquire-balance",
+                    tr_id=tr_id,
+                    params=params,
+                )
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(1)
         summary = data.get("output2", [{}])
         summary = summary[0] if isinstance(summary, list) and summary else summary
         # nxdy_excc_amt(익일청산예수금): T+2 매도 대금까지 포함한 실사용 가능 금액
@@ -44,23 +53,31 @@ class KISAccount:
         acnt_no = account_no.split("-")[0]
 
         tr_id = "VTTC8434R" if settings.is_paper else "TTTC8434R"
-        data = await kis_client.get(
-            "/uapi/domestic-stock/v1/trading/inquire-balance",
-            tr_id=tr_id,
-            params={
-                "CANO": acnt_no,
-                "ACNT_PRDT_CD": acnt_prdt_cd,
-                "AFHR_FLPR_YN": "N",
-                "OFL_YN": "N",
-                "INQR_DVSN": "02",
-                "UNPR_DVSN": "01",
-                "FUND_STTL_ICLD_YN": "N",
-                "FNCG_AMT_AUTO_RDPT_YN": "N",
-                "PRCS_DVSN": "00",
-                "CTX_AREA_FK100": "",
-                "CTX_AREA_NK100": "",
-            },
-        )
+        params = {
+            "CANO": acnt_no,
+            "ACNT_PRDT_CD": acnt_prdt_cd,
+            "AFHR_FLPR_YN": "N",
+            "OFL_YN": "N",
+            "INQR_DVSN": "02",
+            "UNPR_DVSN": "01",
+            "FUND_STTL_ICLD_YN": "N",
+            "FNCG_AMT_AUTO_RDPT_YN": "N",
+            "PRCS_DVSN": "00",
+            "CTX_AREA_FK100": "",
+            "CTX_AREA_NK100": "",
+        }
+        for attempt in range(3):
+            try:
+                data = await kis_client.get(
+                    "/uapi/domestic-stock/v1/trading/inquire-balance",
+                    tr_id=tr_id,
+                    params=params,
+                )
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(1)
         positions = []
         for item in data.get("output1", []):
             qty = int(item.get("hldg_qty", 0))
