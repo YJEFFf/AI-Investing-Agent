@@ -320,6 +320,17 @@ class Orchestrator:
             )
 
 
+    async def retry_analysis_if_needed(self) -> None:
+        """16:00~00:00 매시 정각 — pending 신호 3개 미만이면 재분석"""
+        async with AsyncSessionLocal() as session:
+            pending = await get_pending_signals(session)
+        count = len(pending)
+        if count >= 3:
+            logger.info(f"재분석 스킵 — pending 신호 {count}개 (3개 이상 충족)")
+            return
+        logger.info(f"pending 신호 {count}개 → 재분석 시작")
+        await self.pre_market_setup()
+
     async def _restore_pending_signals(self) -> None:
         """재시작 시 DB에서 오늘 미실행 pending 신호 복원"""
         try:
