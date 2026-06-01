@@ -562,6 +562,20 @@ class Orchestrator:
             # 장중(09:00~15:30) 또는 장전: 재분석 스킵, 포지션 관리만
             logger.info("장중/장전 시작 — 재분석 스킵, 폴링으로 포지션 관리만 진행")
             await self._restore_pending_signals()
+            # 장중 재시작 시 미실행 신호 즉시 집행
+            t_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            t_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+            if t_open <= now < t_close and self._pending_signals:
+                logger.info(f"장중 재시작 — pending {len(self._pending_signals)}개 즉시 실행")
+                self._trading_active = True
+                try:
+                    balance = await kis_account.get_balance()
+                    self._cached_balance = balance
+                except Exception:
+                    pass
+                if settings.is_paper:
+                    asyncio.create_task(self._polling_loop())
+                await self._execute_pending_signals()
 
         if not settings.is_paper:
             asyncio.create_task(kis_ws.connect_and_run())

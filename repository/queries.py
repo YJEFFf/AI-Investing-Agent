@@ -154,13 +154,13 @@ async def get_today_sell_count_by_market(session: AsyncSession, market: str) -> 
 
 
 async def get_pending_signals(session: AsyncSession, market: str = "KR") -> list[Signal]:
-    """오늘 날짜의 미실행 pending 신호 조회"""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    """미실행 pending 신호 조회 — 24시간 이내 생성된 것만"""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     result = await session.execute(
         select(Signal)
         .where(Signal.market == market)
         .where(Signal.pending == True)
-        .where(func.date(Signal.created_at) == today)
+        .where(Signal.created_at >= cutoff)
         .order_by(Signal.chart_confidence.desc())
     )
     return result.scalars().all()
