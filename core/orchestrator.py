@@ -25,7 +25,7 @@ from strategy.regime_detector import detect_regime, MarketRegime
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
-from core.notifier import notify_buy, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_skip_min_amount
+from core.notifier import notify_buy, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary
 from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -244,11 +244,6 @@ class Orchestrator:
                     logger.info(f"매수 수량 0 → 스킵: {code} (현재가 {current_price:,}원, ratio={signal.position_ratio:.2f})")
                     continue
 
-                if qty * current_price < 800_000:
-                    amount = qty * current_price
-                    logger.info(f"최소 투자금액 미달 → 스킵: {code} ({qty}주 × {current_price:,}원 = {amount:,}원)")
-                    await notify_skip_min_amount(code, stock_name, qty, current_price, amount)
-                    continue
 
                 stock_name = next((s["name"] for s in self._watchlist if s["code"] == code), code)
                 signal_record = Signal(
