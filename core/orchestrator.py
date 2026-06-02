@@ -186,7 +186,9 @@ class Orchestrator:
             logger.warning(f"장 시작 잔고 조회 실패 — 캐시 사용: {e}")
             balance = self._cached_balance
 
-        # 장전 매수 신호 실행
+        # 장전 매수 신호 실행 — 메모리가 비어있으면 DB에서 복원
+        if not self._pending_signals:
+            await self._restore_pending_signals()
         if self._pending_signals:
             logger.info(f"장전 매수 신호 실행: {len(self._pending_signals)}개")
             await self._execute_pending_signals()
@@ -329,6 +331,9 @@ class Orchestrator:
         count = len(pending)
         if count >= 3:
             logger.info(f"재분석 스킵 — pending 신호 {count}개 (3개 이상 충족)")
+            # 메모리가 비어있으면 DB에서 복원 (재시작 후 skip된 경우 대비)
+            if not self._pending_signals:
+                await self._restore_pending_signals()
             return
         logger.info(f"pending 신호 {count}개 → 재분석 시작")
         await self.pre_market_setup()
