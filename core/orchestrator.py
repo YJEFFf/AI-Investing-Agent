@@ -104,7 +104,9 @@ class Orchestrator:
 
         # 실제 포지션/손익 조회
         async with AsyncSessionLocal() as session:
-            open_pos_count = len(await get_open_positions_by_market(session, "KR"))
+            open_positions = await get_open_positions_by_market(session, "KR")
+            open_pos_count = len(open_positions)
+            already_held = {pos.stock_code for pos in open_positions}
             today_pnl = await get_today_realized_pnl_by_market(session, "KR")
         daily_pnl_pct = today_pnl / balance["total_eval"] if balance["total_eval"] > 0 else 0.0
 
@@ -114,6 +116,9 @@ class Orchestrator:
         async def _analyze_stock(stock: dict) -> None:
             code = stock["code"]
             name = stock.get("name", code)
+            if code in already_held:
+                logger.debug(f"{code} 이미 보유 중 — 분석 스킵")
+                return
             df = self._ohlcv_buffer.get(code)
             if df is None or df.empty or len(df) < 60:
                 return
