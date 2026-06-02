@@ -38,6 +38,7 @@ class Orchestrator:
         self._trading_active = False
         self._ohlcv_buffer: dict[str, pd.DataFrame] = {}       # 일봉 (장전 로드)
         self._pending_signals: dict[str, TradeSignal] = {}     # 장전 분석 결과
+        self._pending_names: dict[str, str] = {}               # 종목코드 → 종목명
         self._watchlist: list[dict] = []
         self._kospi_df = None
         self._cached_balance: dict = {"available_cash": 0, "total_eval": 0, "unrealized_pnl": 0}
@@ -55,6 +56,7 @@ class Orchestrator:
             return
         logger.info("장전 준비 시작")
         self._pending_signals.clear()
+        self._pending_names.clear()
         async with AsyncSessionLocal() as session:
             await clear_pending_signals(session)
 
@@ -128,6 +130,7 @@ class Orchestrator:
                     )
                     if signal.action == "buy":
                         self._pending_signals[code] = signal
+                        self._pending_names[code] = name
                         logger.info(f"[{code}] 스윙 매수 신호 → 대기열 등록 ({signal.reasoning[:60]})")
                         async with AsyncSessionLocal() as sig_session:
                             await save_signal(sig_session, Signal(
@@ -247,7 +250,7 @@ class Orchestrator:
                     continue
 
 
-                stock_name = next((s["name"] for s in self._watchlist if s["code"] == code), code)
+                stock_name = self._pending_names.get(code) or next((s["name"] for s in self._watchlist if s["code"] == code), code)
                 signal_record = Signal(
                     stock_code=code,
                     ta_score=signal.ta_score,
@@ -359,6 +362,7 @@ class Orchestrator:
                     stop_pct=sig.stop_pct or settings.swing_stop_pct,
                     target_pct=sig.target_pct or 0.07,
                 )
+                self._pending_names[sig.stock_code] = sig.stock_name or sig.stock_code
             logger.info(f"DB에서 pending 신호 {len(pending)}개 복원: {[s.stock_code for s in pending]}")
         except Exception as e:
             logger.warning(f"pending 신호 복원 실패: {e}")
