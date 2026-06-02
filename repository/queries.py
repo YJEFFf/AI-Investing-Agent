@@ -167,13 +167,13 @@ async def get_pending_signals(session: AsyncSession, market: str = "KR") -> list
 
 
 async def clear_pending_signals(session: AsyncSession, market: str = "KR") -> None:
-    """오늘 pending 신호 전체 실행 완료(만료) 처리"""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    """pending 신호 전체 실행 완료(만료) 처리 — get_pending_signals와 동일한 24시간 윈도우"""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     await session.execute(
         update(Signal)
         .where(Signal.market == market)
         .where(Signal.pending == True)
-        .where(func.date(Signal.created_at) == today)
+        .where(Signal.created_at >= cutoff)
         .values(pending=False)
     )
     await session.commit()
