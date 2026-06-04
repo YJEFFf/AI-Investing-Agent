@@ -1,33 +1,19 @@
-from config.settings import settings
+_BASE_AMOUNT = 2_000_000
 
 
 def calc_position_size(
     available_cash: int,
     current_price: int,
-    position_ratio: float,
-    win_rate: float = 0.5,
-    avg_win_pct: float = 0.02,
-    avg_loss_pct: float = 0.02,
+    confidence: float,
 ) -> int:
-    """매수 가능 수량 계산 (half-Kelly + 최대 비율 캡)"""
+    """매수 가능 수량 계산 (2,000,000 × confidence, 가용 잔고 90% 캡)"""
     if current_price <= 0 or available_cash <= 0:
         return 0
 
-    # half-Kelly
-    if avg_loss_pct > 0:
-        kelly = (win_rate / avg_loss_pct) - ((1 - win_rate) / avg_win_pct)
-        half_kelly = max(0.0, kelly / 2)
-    else:
-        half_kelly = settings.max_position_pct
+    budget = int(_BASE_AMOUNT * confidence)
+    budget = min(budget, int(available_cash * 0.9))
 
-    # 최대 비율 캡 적용 + 12% 갭 버퍼 (시가 매수 시 개장 직후 2~5% 갭 빈번)
-    fraction = min(half_kelly, settings.max_position_pct) * position_ratio * 0.88
-    budget = int(available_cash * fraction)
-
-    # 잔고 기반 가격 필터: 주당 가격 ≤ 잔고 × 0.95
-    max_price = int(available_cash * 0.95)
-    if current_price > max_price:
+    if current_price > budget:
         return 0
 
-    qty = budget // current_price
-    return max(0, qty)
+    return budget // current_price

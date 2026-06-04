@@ -15,7 +15,7 @@ from repository.models import Signal
 from repository.queries import (
     get_open_positions_by_market, get_position, get_today_realized_pnl_by_market, save_signal,
     get_today_trade_count_by_market, get_today_signal_count_by_market, get_today_sell_count_by_market,
-    get_win_rate_stats, get_pending_signals, clear_pending_signals,
+    get_pending_signals, clear_pending_signals,
 )
 from risk.portfolio_guard import portfolio_guard
 from risk.position_sizer import calc_position_size
@@ -214,8 +214,6 @@ class Orchestrator:
             today_pnl = await get_today_realized_pnl_by_market(session, "KR")
             daily_pnl_pct = today_pnl / balance["total_eval"] if balance["total_eval"] > 0 else 0.0
 
-            win_stats = await get_win_rate_stats(session)
-
             sorted_signals = sorted(
                 self._pending_signals.items(),
                 key=lambda x: x[1].chart_confidence,
@@ -240,18 +238,15 @@ class Orchestrator:
                     logger.warning(f"현재가 조회 실패 {code}: {e}")
                     continue
 
-                # half-Kelly × confidence 비율로 수량 계산 (최대 25% 캡)
+                # 2,000,000 × confidence 기준 수량 계산
                 qty = calc_position_size(
                     available_cash=balance["available_cash"],
                     current_price=current_price,
-                    position_ratio=signal.position_ratio,
-                    win_rate=win_stats["win_rate"],
-                    avg_win_pct=win_stats["avg_win_pct"],
-                    avg_loss_pct=win_stats["avg_loss_pct"],
+                    confidence=signal.chart_confidence,
                 )
 
                 if qty <= 0:
-                    logger.info(f"매수 수량 0 → 스킵: {code} (현재가 {current_price:,}원, ratio={signal.position_ratio:.2f})")
+                    logger.info(f"매수 수량 0 → 스킵: {code} (현재가 {current_price:,}원, confidence={signal.chart_confidence:.2f})")
                     continue
 
 
