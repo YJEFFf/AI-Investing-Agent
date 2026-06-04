@@ -15,7 +15,7 @@ from repository.models import Signal
 from repository.queries import (
     get_open_positions_by_market, get_position, get_today_realized_pnl_by_market, save_signal,
     get_today_trade_count_by_market, get_today_signal_count_by_market, get_today_sell_count_by_market,
-    get_pending_signals, clear_pending_signals,
+    get_pending_signals, clear_pending_signals, expire_old_pending_signals,
 )
 from risk.portfolio_guard import portfolio_guard
 from risk.position_sizer import calc_position_size
@@ -312,6 +312,9 @@ class Orchestrator:
             return
         logger.info("장 후 정산 중")
         async with AsyncSessionLocal() as session:
+            expired = await expire_old_pending_signals(session)
+            if expired:
+                logger.info(f"만료 pending 신호 {expired}개 정리")
             pnl = await get_today_realized_pnl_by_market(session, "KR")
             logger.info(f"오늘 실현 손익: {pnl:+,}원")
             signal_count = await get_today_signal_count_by_market(session, "KR")

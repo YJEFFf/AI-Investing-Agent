@@ -179,6 +179,20 @@ async def clear_pending_signals(session: AsyncSession, market: str = "KR") -> No
     await session.commit()
 
 
+async def expire_old_pending_signals(session: AsyncSession, market: str = "KR") -> int:
+    """24시간 이상 지난 pending 신호 만료 처리 — 매일 post_market에서 호출"""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    result = await session.execute(
+        update(Signal)
+        .where(Signal.market == market)
+        .where(Signal.pending == True)
+        .where(Signal.created_at < cutoff)
+        .values(pending=False)
+    )
+    await session.commit()
+    return result.rowcount
+
+
 async def get_win_rate_stats(session: AsyncSession, limit: int = 50) -> dict:
     """최근 N거래 승률 및 평균 수익/손실 (포지션 사이징용)"""
     trades = await get_recent_trades(session, limit)
