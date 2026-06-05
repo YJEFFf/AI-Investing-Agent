@@ -2,7 +2,6 @@ import logging
 
 import pandas as pd
 
-from config.settings import settings
 from strategy.ta_engine import ta_engine
 from strategy.signal_scorer import compute_score
 from strategy.regime_detector import MarketRegime, detect_regime
@@ -93,9 +92,9 @@ class MultiAgentStrategy:
             )
 
         if chart_op.verdict == "buy" and chart_op.confidence >= 0.50:
-            # LLM 반환값 클램핑 (프롬프트 범위 벗어나는 경우 방어)
-            stop_pct = max(settings.swing_stop_pct, min(float(chart_op.metadata.get("stop_pct", settings.swing_stop_pct)), 0.12))
-            target_pct = max(0.03, min(float(chart_op.metadata.get("target_pct", 0.08)), 0.15))
+            # LLM 반환값 그대로 사용, 물리적 범위만 클램핑 (0~100% 벗어나는 경우만 방어)
+            stop_pct = max(0.02, min(float(chart_op.metadata.get("stop_pct", 0.05)), 0.12))
+            target_pct = max(0.03, min(float(chart_op.metadata.get("target_pct", 0.05)), 0.15))
             # stop/target은 전날 종가(current_price) 기준 잠정 계산 — 실제 체결 시 order_manager가 entry 기준으로 재계산
             stop_price = round(current_price * (1 - stop_pct))
             target_price = round(current_price * (1 + target_pct))

@@ -352,18 +352,21 @@ class Orchestrator:
             if not pending:
                 return
             for sig in pending:
+                if not sig.stop_pct or not sig.target_pct:
+                    logger.warning(f"stop_pct/target_pct 누락 신호 복원 스킵: {sig.stock_code} (구버전 저장 데이터)")
+                    continue
                 self._pending_signals[sig.stock_code] = TradeSignal(
                     action="buy",
-                    position_ratio=sig.position_size_pct or 0.4,
+                    position_ratio=sig.position_size_pct or 0.0,
                     stop_price=0,
                     stop_type="trailing",
                     reasoning=sig.reasoning or "",
                     ta_score=sig.ta_score or 0.0,
-                    risk_level=sig.risk_level or "medium",
+                    risk_level=sig.risk_level or "low",
                     chart_verdict=sig.chart_verdict or "buy",
                     chart_confidence=sig.chart_confidence or 0.0,
-                    stop_pct=sig.stop_pct or settings.swing_stop_pct,
-                    target_pct=sig.target_pct or 0.07,
+                    stop_pct=sig.stop_pct,
+                    target_pct=sig.target_pct,
                 )
                 self._pending_names[sig.stock_code] = sig.stock_name or sig.stock_code
             logger.info(f"DB에서 pending 신호 {len(pending)}개 복원: {[s.stock_code for s in pending]}")
@@ -482,9 +485,8 @@ class Orchestrator:
                         return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", int(pnl))
-                    # 나머지 절반: 손익분기(avg_price)로 stop 이동, trailing 비율 확대, target 제거
+                    # 나머지 절반: 손익분기(avg_price)로 stop 이동, target 제거 (trail_pct는 LLM 설정값 유지)
                     pos.stop_price = avg_price
-                    pos.trail_pct = settings.partial_tp_trail_pct
                     pos.target_price = None
                     await session.commit()
                 else:
