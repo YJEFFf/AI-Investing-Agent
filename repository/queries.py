@@ -3,6 +3,7 @@ from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from repository.models import Trade, Position, DailyPnL, Signal
+from core.trading_calendar import last_analysis_cutoff_utc
 
 
 async def get_open_positions(session: AsyncSession) -> list[Position]:
@@ -154,8 +155,12 @@ async def get_today_sell_count_by_market(session: AsyncSession, market: str) -> 
 
 
 async def get_pending_signals(session: AsyncSession, market: str = "KR") -> list[Signal]:
-    """미실행 pending 신호 조회 — 24시간 이내 생성된 것만"""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    """미실행 pending 신호 조회 — 마지막 거래일 16:00 KST 이후 생성된 것만
+
+    24시간 윈도우 대신 last_analysis_cutoff_utc()를 사용하여
+    주말/공휴일 후 금요일 신호가 만료되어 재분석되는 문제를 방지한다.
+    """
+    cutoff = last_analysis_cutoff_utc()
     result = await session.execute(
         select(Signal)
         .where(Signal.market == market)
@@ -167,8 +172,8 @@ async def get_pending_signals(session: AsyncSession, market: str = "KR") -> list
 
 
 async def clear_pending_signals(session: AsyncSession, market: str = "KR") -> None:
-    """pending 신호 전체 실행 완료(만료) 처리 — get_pending_signals와 동일한 24시간 윈도우"""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    """pending 신호 전체 실행 완료(만료) 처리"""
+    cutoff = last_analysis_cutoff_utc()
     await session.execute(
         update(Signal)
         .where(Signal.market == market)
@@ -180,8 +185,8 @@ async def clear_pending_signals(session: AsyncSession, market: str = "KR") -> No
 
 
 async def expire_old_pending_signals(session: AsyncSession, market: str = "KR") -> int:
-    """24시간 이상 지난 pending 신호 만료 처리 — 매일 post_market에서 호출"""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    """마지막 거래일 분석 시작 이전 pending 신호 만료 처리 — 매일 post_market에서 호출"""
+    cutoff = last_analysis_cutoff_utc()
     result = await session.execute(
         update(Signal)
         .where(Signal.market == market)
