@@ -110,8 +110,8 @@ class Orchestrator:
             today_pnl = await get_today_realized_pnl_by_market(session, "KR")
         daily_pnl_pct = today_pnl / balance["total_eval"] if balance["total_eval"] > 0 else 0.0
 
-        # 차트 이미지 분석 (최대 3개 동시)
-        sem = asyncio.Semaphore(3)
+        # 차트 이미지 분석 (순차 처리 — 동시 호출 시 Anthropic 분당 토큰 한도 초과)
+        sem = asyncio.Semaphore(1)
 
         async def _analyze_stock(stock: dict) -> None:
             code = stock["code"]
