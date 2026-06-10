@@ -25,7 +25,7 @@ from strategy.regime_detector import detect_regime, MarketRegime
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
-from core.notifier import notify_buy, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary
+from core.notifier import notify_buy, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip
 from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ class Orchestrator:
         self._ohlcv_buffer: dict[str, pd.DataFrame] = {}       # 일봉 (장전 로드)
         self._pending_signals: dict[str, TradeSignal] = {}     # 장전 분석 결과
         self._pending_names: dict[str, str] = {}               # 종목코드 → 종목명
+        self._pending_prices: dict[str, int] = {}              # 종목코드 → 분석 시점 종가 (갭 필터용)
         self._watchlist: list[dict] = []
         self._kospi_df = None
         self._cached_balance: dict = {"available_cash": 0, "total_eval": 0, "unrealized_pnl": 0}
@@ -57,6 +58,7 @@ class Orchestrator:
         logger.info("장전 준비 시작")
         self._pending_signals.clear()
         self._pending_names.clear()
+        self._pending_prices.clear()
         async with AsyncSessionLocal() as session:
             await clear_pending_signals(session)
 
@@ -136,6 +138,7 @@ class Orchestrator:
                     if signal.action == "buy":
                         self._pending_signals[code] = signal
                         self._pending_names[code] = name
+                        self._pending_prices[code] = int(df["close"].iloc[-1])
                         logger.info(f"[{code}] 스윙 매수 신호 → 대기열 등록 ({signal.reasoning[:60]})")
                         async with AsyncSessionLocal() as sig_session:
                             await save_signal(sig_session, Signal(
@@ -238,6 +241,16 @@ class Orchestrator:
                     logger.warning(f"현재가 조회 실패 {code}: {e}")
                     continue
 
+                # 갭다운 필터: 시초가가 분석 기준가 대비 -2% 이상 하락 시 스킵
+                analysis_price = self._pending_prices.get(code)
+                if analysis_price and analysis_price > 0:
+                    gap_pct = (current_price - analysis_price) / analysis_price
+                    if gap_pct < -0.02:
+                        stock_name = self._pending_names.get(code, code)
+                        logger.info(f"{code} 갭다운 스킵: 기준가 {analysis_price:,} → 시초가 {current_price:,} ({gap_pct:.1%})")
+                        await notify_gap_skip(code, stock_name, analysis_price, current_price, gap_pct)
+                        continue
+
                 # 2,000,000 × confidence 기준 수량 계산
                 qty = calc_position_size(
                     available_cash=balance["available_cash"],
@@ -262,8 +275,10 @@ class Orchestrator:
                     reasoning=signal.reasoning,
                 )
                 await save_signal(session, signal_record)
+                logger.debug(f"signal 저장 완료: id={signal_record.id}, code={code}")
                 result, fill_price = await order_manager.execute_buy(
-                    session, code, stock_name, qty, signal, current_price
+                    session, code, stock_name, qty, signal, current_price,
+                    signal_id=signal_record.id,
                 )
                 if not result.success:
                     logger.warning(f"매수 실패 — 텔레그램 알림 생략: {code}")
@@ -295,8 +310,11 @@ class Orchestrator:
         self._trading_active = False
         await kis_ws.stop()
         self._pending_signals.clear()
+        self._pending_prices.clear()
         self._sell_fail_time.clear()
         self._sell_perm_lock.clear()
+        async with AsyncSessionLocal() as session:
+            await clear_pending_signals(session)
 
     async def pre_close(self) -> None:
         """15:20 장마감 전 스윙 포지션 점검"""
@@ -369,6 +387,11 @@ class Orchestrator:
                     target_pct=sig.target_pct,
                 )
                 self._pending_names[sig.stock_code] = sig.stock_name or sig.stock_code
+                # 분석 기준가 근사: stop_price / (1 - stop_pct)
+                if sig.stop_pct and sig.stop_pct > 0:
+                    ref_price = self._pending_signals[sig.stock_code].stop_price
+                    if ref_price and ref_price > 0:
+                        self._pending_prices[sig.stock_code] = round(ref_price / (1 - sig.stop_pct))
             logger.info(f"DB에서 pending 신호 {len(pending)}개 복원: {[s.stock_code for s in pending]}")
         except Exception as e:
             logger.warning(f"pending 신호 복원 실패: {e}")
@@ -563,15 +586,15 @@ class Orchestrator:
         logger.info("스케줄러 시작됨")
 
         now = datetime.now()
-        t_1600 = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        t_1800 = now.replace(hour=18, minute=0, second=0, microsecond=0)
         t_1530 = now.replace(hour=15, minute=30, second=0, microsecond=0)
-        if now >= t_1600:
-            # 16:00 이후 시작: 당일 분석 즉시 실행
-            logger.info("16:00 이후 시작 — 즉시 분석 실행")
+        if now >= t_1800:
+            # 18:00 이후 시작: 당일 분석 즉시 실행
+            logger.info("18:00 이후 시작 — 즉시 분석 실행")
             await self.retry_analysis_if_needed()
-        elif t_1530 <= now < t_1600:
-            # 15:30~16:00 사이: 스케줄러가 16:00에 분석 실행
-            logger.info("15:30~16:00 사이 시작 — 스케줄러 대기")
+        elif t_1530 <= now < t_1800:
+            # 15:30~18:00 사이: 스케줄러가 18:00에 분석 실행
+            logger.info("15:30~18:00 사이 시작 — 스케줄러 대기")
         else:
             # 장중(09:00~15:30) 또는 장전: 재분석 스킵, 포지션 관리만
             logger.info("장중/장전 시작 — 재분석 스킵, 폴링으로 포지션 관리만 진행")

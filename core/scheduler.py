@@ -30,7 +30,7 @@ def create_scheduler(orchestrator) -> AsyncIOScheduler:
     )
     scheduler.add_job(
         orchestrator.retry_analysis_if_needed,
-        CronTrigger(hour="16,17,18,19,20,21,22,23,0", minute=0, day_of_week="mon-fri"),
+        CronTrigger(hour="18,19,20,21,22,23,0", minute=0, day_of_week="mon-fri"),
         id="retry_analysis",
     )
 

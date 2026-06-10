@@ -20,6 +20,7 @@ class OrderManager:
         qty: int,
         signal: TradeSignal,
         current_price: int,
+        signal_id: int | None = None,
     ) -> tuple[OrderResult, int]:
         """매수 실행. (OrderResult, 실제_체결가) 반환."""
         result = await kis_order.market_buy(stock_code, qty)
@@ -62,9 +63,10 @@ class OrderManager:
             entry_qty=qty,
             stop_price=actual_stop,
             stop_type=signal.stop_type,
+            signal_id=signal_id,
         )
         await save_trade(session, trade)
-        logger.info(f"Buy executed: {stock_code} x{qty} @ {fill_price:,}, stop={actual_stop:,}, target={actual_target:,}")
+        logger.info(f"Buy executed: {stock_code} x{qty} @ {fill_price:,}, stop={actual_stop:,}, target={actual_target:,}, signal_id={signal_id}")
         return result, fill_price
 
     async def execute_sell(

@@ -92,6 +92,16 @@ async def notify_sell_fail(code: str, name: str, reason: str, will_retry: bool) 
 
 
 
+async def notify_gap_skip(code: str, name: str, analysis_price: int, open_price: int, gap_pct: float) -> None:
+    text = (
+        f"⏭ <b>갭다운 스킵</b>\n"
+        f"종목: {name} ({code})\n"
+        f"분석 기준가: {analysis_price:,}원 → 시초가: {open_price:,}원\n"
+        f"갭: {gap_pct:.1%}"
+    )
+    await _send(text)
+
+
 async def notify_daily_summary(signals: int, trades: int, sells: int, pnl: int) -> None:
     text = (
         f"📊 <b>오늘 결과</b>\n"
