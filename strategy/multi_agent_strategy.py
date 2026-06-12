@@ -98,7 +98,7 @@ class MultiAgentStrategy:
             # HIGH_VOLATILITY: ATR 기반 최소 스탑 보정 (노이즈 손절 방지)
             if regime == MarketRegime.HIGH_VOLATILITY:
                 atr_pct = ta_result.atr / current_price
-                atr_stop = min(round(atr_pct * 1.5, 4), 0.12)
+                atr_stop = min(round(atr_pct * 1.5, 4), 0.10)
                 if stop_pct < atr_stop:
                     logger.info(f"[{stock_code}] HIGH_VOL 스탑 확대: {stop_pct:.3f} → {atr_stop:.3f} (ATR%={atr_pct:.3%})")
                     stop_pct = atr_stop

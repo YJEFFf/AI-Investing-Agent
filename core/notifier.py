@@ -102,6 +102,18 @@ async def notify_gap_skip(code: str, name: str, analysis_price: int, open_price:
     await _send(text)
 
 
+async def notify_pre_close_exit(code: str, name: str, qty: int, avg_price: int, current_price: int, loss_pct: float) -> None:
+    pnl = (current_price - avg_price) * qty
+    text = (
+        f"🔴 <b>장마감 전 손절</b>\n"
+        f"종목: {name} ({code})\n"
+        f"매수가: {avg_price:,}원 → 현재가: {current_price:,}원 ({loss_pct:.1%})\n"
+        f"수량: {qty}주 | 손익: {pnl:+,}원\n"
+        f"사유: 당일 -5% 이상, 이익권 미진입"
+    )
+    await _send(text)
+
+
 async def notify_daily_summary(signals: int, trades: int, sells: int, pnl: int) -> None:
     text = (
         f"📊 <b>오늘 결과</b>\n"
