@@ -343,15 +343,24 @@ class Orchestrator:
                     logger.info(
                         f"[{pos.stock_code}] 장마감 전 손절: {avg_price:,} → {current_price:,} ({loss_pct:.1%})"
                     )
-                    async with AsyncSessionLocal() as session:
-                        result, fill_price = await order_manager.execute_sell(
-                            session, pos.stock_code, int(pos.qty), current_price, "pre_close_loss"
-                        )
-                    if result.success:
+                    result, fill_price = None, current_price
+                    for attempt in range(2):
+                        async with AsyncSessionLocal() as session:
+                            result, fill_price = await order_manager.execute_sell(
+                                session, pos.stock_code, int(pos.qty), current_price, "pre_close_loss"
+                            )
+                        if result.success:
+                            break
+                        if attempt == 0:
+                            logger.warning(f"[{pos.stock_code}] pre_close 매도 실패, 5초 후 재시도")
+                            await asyncio.sleep(5)
+                    if result and result.success:
                         await notify_pre_close_exit(
                             pos.stock_code, pos.stock_name, int(pos.qty),
                             avg_price, fill_price, loss_pct,
                         )
+                    else:
+                        logger.error(f"[{pos.stock_code}] pre_close 매도 최종 실패 — stop_loss에 위임")
             except Exception as e:
                 logger.error(f"pre_close 점검 오류 [{pos.stock_code}]: {e}")
 
