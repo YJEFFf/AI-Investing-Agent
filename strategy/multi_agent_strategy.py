@@ -102,6 +102,18 @@ class MultiAgentStrategy:
                 if stop_pct < atr_stop:
                     logger.info(f"[{stock_code}] HIGH_VOL 스탑 확대: {stop_pct:.3f} → {atr_stop:.3f} (ATR%={atr_pct:.3%})")
                     stop_pct = atr_stop
+            # R:R 필터: target이 stop의 1.2배 미만이면 진입 불리 → 스킵
+            if target_pct < stop_pct * 1.2:
+                logger.info(
+                    f"[{stock_code}] R:R 불량 스킵: stop={stop_pct:.1%} / target={target_pct:.1%} "
+                    f"(비율={target_pct/stop_pct:.2f} < 1.2)"
+                )
+                return TradeSignal(
+                    action="skip", position_ratio=0.0, stop_price=0.0,
+                    stop_type="none",
+                    reasoning=f"R:R 불량 (stop={stop_pct:.1%} / target={target_pct:.1%})",
+                    ta_score=ta_score, risk_level=risk_level,
+                )
             # stop/target은 전날 종가(current_price) 기준 잠정 계산 — 실제 체결 시 order_manager가 entry 기준으로 재계산
             stop_price = round(current_price * (1 - stop_pct))
             target_price = round(current_price * (1 + target_pct))
