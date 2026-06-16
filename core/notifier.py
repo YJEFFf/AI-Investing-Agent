@@ -14,14 +14,16 @@ async def _send(text: str) -> None:
         return
     try:
         url = _BASE_URL.format(token=settings.telegram_bot_token)
-        async with httpx.AsyncClient(timeout=5) as client:
-            await client.post(url, json={
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json={
                 "chat_id": settings.telegram_chat_id,
                 "text": text,
                 "parse_mode": "HTML",
             })
+        if not resp.is_success:
+            logger.warning(f"텔레그램 알림 실패: HTTP {resp.status_code} — {resp.text[:200]}")
     except Exception as e:
-        logger.warning(f"텔레그램 알림 실패: {e}")
+        logger.warning(f"텔레그램 알림 실패: {repr(e)}")
 
 
 async def notify_buy(code: str, name: str, qty: int, price: int,
