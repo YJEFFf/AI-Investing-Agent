@@ -62,11 +62,13 @@ class KISRestClient:
                     rt_cd = data.get("rt_cd", "0")
                     if rt_cd != "0":
                         msg = data.get("msg1", "Unknown KIS error")
+                        msg_cd = data.get("msg_cd", "")
                         # EGW00201: 초당 거래건수 초과 → 재시도
                         if "EGW00201" in msg and attempt < _MAX_RETRIES - 1:
                             await asyncio.sleep(_RETRY_DELAY * (attempt + 1))
                             continue
-                        raise RuntimeError(f"KIS API error [{rt_cd}]: {msg}")
+                        logger.error(f"KIS API error [{rt_cd}|{msg_cd}]: {msg} — path={path}")
+                        raise RuntimeError(f"KIS API error [{rt_cd}|{msg_cd}]: {msg}")
 
                     return data
 

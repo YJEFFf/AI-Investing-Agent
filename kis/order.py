@@ -137,7 +137,7 @@ class KISOrder:
                 success=True,
             )
         except Exception as e:
-            logger.error(f"Order failed: {order_type} {stock_code} x{qty} → {e}")
+            logger.error(f"Order failed: {order_type} {stock_code} x{qty} → {repr(e)}")
             return OrderResult(
                 order_no="",
                 stock_code=stock_code,
