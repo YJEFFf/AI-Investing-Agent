@@ -103,7 +103,8 @@ class MultiAgentStrategy:
                     logger.info(f"[{stock_code}] HIGH_VOL 스탑 확대: {stop_pct:.3f} → {atr_stop:.3f} (ATR%={atr_pct:.3%})")
                     stop_pct = atr_stop
             # R:R 필터: target이 stop의 1.2배 미만이면 진입 불리 → 스킵
-            if target_pct < stop_pct * 1.2:
+            # HIGH_VOLATILITY는 ATR로 stop이 강제 확대되므로 R:R 역전이 구조적 — 필터 면제
+            if regime != MarketRegime.HIGH_VOLATILITY and target_pct < stop_pct * 1.2:
                 logger.info(
                     f"[{stock_code}] R:R 불량 스킵: stop={stop_pct:.1%} / target={target_pct:.1%} "
                     f"(비율={target_pct/stop_pct:.2f} < 1.2)"
