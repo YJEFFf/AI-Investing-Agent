@@ -56,21 +56,23 @@ async def notify_sell(code: str, name: str, qty: int, price: int,
 async def notify_pre_market_summary(
     total_scanned: int,
     buy_signals: list[dict],
+    is_retry: bool = False,
 ) -> None:
+    label = "재분석 완료" if is_retry else "장전 분석 완료"
     if buy_signals:
         lines = "\n".join(
             f"  • {s['name']}({s['code']}) | confidence {s['confidence']:.2f}"
             for s in buy_signals
         )
         text = (
-            f"🔍 <b>장전 분석 완료</b>\n"
+            f"🔍 <b>{label}</b>\n"
             f"스캔: {total_scanned}개 종목 → 매수 신호: {len(buy_signals)}개\n\n"
             f"{lines}"
         )
     else:
         text = (
-            f"🔍 <b>장전 분석 완료</b>\n"
-            f"스캔: {total_scanned}개 종목 → 매수 신호 없음"
+            f"⚠️ <b>{label} — 매수 신호 없음</b>\n"
+            f"스캔: {total_scanned}개 종목 중 조건 충족 종목 없음"
         )
     await _send(text)
 

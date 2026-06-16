@@ -50,7 +50,7 @@ class Orchestrator:
         with open(_WATCHLIST_PATH) as f:
             return yaml.safe_load(f)
 
-    async def pre_market_setup(self) -> None:
+    async def pre_market_setup(self, is_retry: bool = False) -> None:
         """15:40 장 마감 후 분석 — 일봉 데이터 로드 + 차트 이미지 분석 → 다음날 09:00 매수 실행"""
         if not is_trading_day():
             logger.info("휴장일 — 장 마감 후 분석 스킵")
@@ -171,7 +171,7 @@ class Orchestrator:
             }
             for code, sig in self._pending_signals.items()
         ]
-        await notify_pre_market_summary(len(self._watchlist), signal_list)
+        await notify_pre_market_summary(len(self._watchlist), signal_list, is_retry=is_retry)
 
     async def market_open(self) -> None:
         """09:00 장 시작 — 전일 분석 결과 매수 실행"""
@@ -401,7 +401,7 @@ class Orchestrator:
                 await self._restore_pending_signals()
             return
         logger.info(f"pending 신호 {count}개 → 재분석 시작")
-        await self.pre_market_setup()
+        await self.pre_market_setup(is_retry=True)
 
     async def _restore_pending_signals(self) -> None:
         """재시작 시 DB에서 오늘 미실행 pending 신호 복원"""
