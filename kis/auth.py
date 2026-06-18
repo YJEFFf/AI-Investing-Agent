@@ -1,7 +1,11 @@
+import asyncio
 import json
+import logging
 import time
 from pathlib import Path
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from config.settings import settings
 
@@ -59,10 +63,21 @@ class KISAuth:
             "appsecret": settings.kis_app_secret,
             "Authorization": f"Bearer {token}",
         }
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(url, json=body, headers=headers, timeout=10.0)
-            resp.raise_for_status()
-            return resp.json()["HASH"]
+        # 장마감 전후(15:20 등) KIS 서버 부하로 hashkey 엔드포인트가 ReadTimeout을 반환하는 경우가 있어
+        # 최대 3회 재시도 (5초 간격). 이 retry가 핵심 fix — rest_client._request 단계가 아님.
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(url, json=body, headers=headers, timeout=30.0)
+                    resp.raise_for_status()
+                    return resp.json()["HASH"]
+            except Exception as e:
+                last_exc = e
+                if attempt < 2:
+                    logger.warning(f"hashkey 획득 실패 (시도 {attempt + 1}/3): {repr(e)} — 5초 후 재시도")
+                    await asyncio.sleep(5)
+        raise last_exc
 
     def _load_cache(self) -> dict | None:
         if not _TOKEN_CACHE_FILE.exists():

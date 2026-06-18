@@ -282,6 +282,9 @@ class Orchestrator:
                 )
                 if not result.success:
                     logger.warning(f"매수 실패 — 텔레그램 알림 생략: {code}")
+                    if "40250000" in result.message:
+                        logger.info("잔고 부족 확인 — 이후 신호 실행 중단")
+                        break
                     continue
                 notify_stop = round(fill_price * (1 - signal.stop_pct))
                 notify_target = round(fill_price * (1 + signal.target_pct))
@@ -344,16 +347,15 @@ class Orchestrator:
                         f"[{pos.stock_code}] 장마감 전 손절: {avg_price:,} → {current_price:,} ({loss_pct:.1%})"
                     )
                     result, fill_price = None, current_price
-                    for attempt in range(2):
+                    for attempt in range(4):
                         async with AsyncSessionLocal() as session:
                             result, fill_price = await order_manager.execute_sell(
                                 session, pos.stock_code, int(pos.qty), current_price, "pre_close_loss"
                             )
                         if result.success:
                             break
-                        if attempt == 0:
-                            logger.warning(f"[{pos.stock_code}] pre_close 매도 실패, 5초 후 재시도")
-                            await asyncio.sleep(5)
+                        logger.warning(f"[{pos.stock_code}] pre_close 매도 실패 (시도 {attempt + 1}/4), 15초 후 재시도")
+                        await asyncio.sleep(15)
                     if result and result.success:
                         await notify_pre_close_exit(
                             pos.stock_code, pos.stock_name, int(pos.qty),
@@ -549,8 +551,9 @@ class Orchestrator:
                         return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", int(pnl))
-                    # 나머지 절반: 손익분기(avg_price)로 stop 이동, target 제거 (trail_pct는 LLM 설정값 유지)
-                    pos.stop_price = avg_price
+                    # 나머지 절반: target만 제거, trailing stop은 기존 계산값 유지
+                    # stop_price를 avg_price로 강제 이동하면 trailing 공식(max 구조)에 의해
+                    # 이후 stop이 내려갈 수 없어 사실상 BEP 고정손절이 되므로 제거
                     pos.target_price = None
                     await session.commit()
                 else:
