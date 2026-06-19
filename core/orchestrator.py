@@ -283,8 +283,12 @@ class Orchestrator:
                 if not result.success:
                     logger.warning(f"매수 실패 — 텔레그램 알림 생략: {code}")
                     if "40250000" in result.message:
-                        logger.info("잔고 부족 확인 — 이후 신호 실행 중단")
-                        break
+                        await self._refresh_balance()
+                        balance = self._cached_balance
+                        if balance["available_cash"] < 300_000:
+                            logger.info(f"잔고 소진 ({balance['available_cash']:,}원) — 이후 신호 실행 중단")
+                            break
+                        logger.info(f"잔고 부족이나 잔여 예수금 {balance['available_cash']:,}원 — 다음 신호 계속")
                     continue
                 notify_stop = round(fill_price * (1 - signal.stop_pct))
                 notify_target = round(fill_price * (1 + signal.target_pct))
