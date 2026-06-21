@@ -282,6 +282,13 @@ class Orchestrator:
                     final_action=signal.action,
                     position_size_pct=signal.position_ratio,
                     reasoning=signal.reasoning,
+                    rsi=signal.rsi if signal.current_price else None,
+                    macd_hist=signal.macd_hist if signal.current_price else None,
+                    bb_pct=signal.bb_pct if signal.current_price else None,
+                    ema_ratio=signal.ema_ratio if signal.current_price else None,
+                    volume_ratio=signal.volume_ratio if signal.current_price else None,
+                    regime=signal.regime if signal.current_price else None,
+                    current_price=int(signal.current_price) if signal.current_price else None,
                 )
                 await save_signal(session, signal_record)
                 logger.debug(f"signal 저장 완료: id={signal_record.id}, code={code}")
@@ -441,6 +448,14 @@ class Orchestrator:
                     chart_confidence=sig.chart_confidence or 0.0,
                     stop_pct=sig.stop_pct,
                     target_pct=sig.target_pct,
+                    rsi=sig.rsi or 0.0,
+                    macd_hist=sig.macd_hist or 0.0,
+                    bb_pct=sig.bb_pct or 0.0,
+                    ema_ratio=sig.ema_ratio or 0.0,
+                    volume_ratio=sig.volume_ratio or 0.0,
+                    regime=sig.regime or "",
+                    current_price=float(sig.current_price) if sig.current_price else 0.0,
+                    llm_called=True,
                 )
                 self._pending_names[sig.stock_code] = sig.stock_name or sig.stock_code
                 # 분석 기준가 근사: stop_price / (1 - stop_pct)
