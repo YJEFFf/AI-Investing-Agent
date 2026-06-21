@@ -222,6 +222,7 @@ class Orchestrator:
                 key=lambda x: x[1].chart_confidence,
                 reverse=True,
             )
+            consecutive_insufficient = 0
             for code, signal in sorted_signals:
                 if code in already_held:
                     logger.debug(f"{code} 이미 보유 중 — 스킵")
@@ -283,12 +284,11 @@ class Orchestrator:
                 if not result.success:
                     logger.warning(f"매수 실패 — 텔레그램 알림 생략: {code}")
                     if "40250000" in result.message:
-                        await self._refresh_balance()
-                        balance = self._cached_balance
-                        if balance["available_cash"] < 300_000:
-                            logger.info(f"잔고 소진 ({balance['available_cash']:,}원) — 이후 신호 실행 중단")
+                        consecutive_insufficient += 1
+                        if consecutive_insufficient >= 2:
+                            logger.info("잔고 부족 연속 2회 — 이후 신호 실행 중단")
                             break
-                        logger.info(f"잔고 부족이나 잔여 예수금 {balance['available_cash']:,}원 — 다음 신호 계속")
+                        logger.info(f"잔고 부족 1회 ({code}) — 다음 신호 계속")
                     continue
                 notify_stop = round(fill_price * (1 - signal.stop_pct))
                 notify_target = round(fill_price * (1 + signal.target_pct))
@@ -296,6 +296,7 @@ class Orchestrator:
                     code, stock_name, qty, fill_price,
                     notify_target, notify_stop, signal.chart_confidence,
                 )
+                consecutive_insufficient = 0
                 open_pos_count += 1
                 if not await self._refresh_balance():
                     # 잔고 갱신 실패 — 체결 비용 수동 차감해 다음 종목 예산 과다 방지
