@@ -40,6 +40,20 @@ class MultiAgentStrategy:
         # 3. TA 복합 점수
         ta_score = compute_score(ta_result, current_price, regime)
 
+        # ML 피처 사전 계산
+        bb_range = ta_result.bb_upper - ta_result.bb_lower
+        bb_pct = (current_price - ta_result.bb_lower) / bb_range if bb_range > 0 else 0.5
+        ema_ratio = ta_result.ema_20 / ta_result.ema_60 if ta_result.ema_60 > 0 else 1.0
+        _ta_extras = dict(
+            rsi=round(ta_result.rsi, 2),
+            macd_hist=round(ta_result.macd_hist, 4),
+            bb_pct=round(bb_pct, 4),
+            ema_ratio=round(ema_ratio, 4),
+            volume_ratio=round(ta_result.volume_ratio, 2),
+            regime=regime.value,
+            current_price=current_price,
+        )
+
         # 4. TA 최소 필터 — 25점 미만이면 스킵 (이미지가 주 판단)
         if ta_score < 25:
             logger.debug(f"{stock_code} TA 점수 미달 ({ta_score:.1f}) → 스킵")
@@ -89,6 +103,8 @@ class MultiAgentStrategy:
                 action="skip", position_ratio=0.0, stop_price=0.0,
                 stop_type="none", reasoning=f"리스크 차단: {risk_op.reasoning}",
                 ta_score=ta_score, risk_level=risk_level,
+                chart_verdict=chart_op.verdict, chart_confidence=chart_op.confidence,
+                llm_called=True, **_ta_extras,
             )
 
         if chart_op.verdict == "buy" and chart_op.confidence >= 0.60:
@@ -114,6 +130,8 @@ class MultiAgentStrategy:
                     stop_type="none",
                     reasoning=f"R:R 불량 (stop={stop_pct:.1%} / target={target_pct:.1%})",
                     ta_score=ta_score, risk_level=risk_level,
+                    chart_verdict=chart_op.verdict, chart_confidence=chart_op.confidence,
+                    llm_called=True, **_ta_extras,
                 )
             # stop/target은 전날 종가(current_price) 기준 잠정 계산 — 실제 체결 시 order_manager가 entry 기준으로 재계산
             stop_price = round(current_price * (1 - stop_pct))
@@ -136,6 +154,7 @@ class MultiAgentStrategy:
                 chart_confidence=chart_op.confidence,
                 stop_pct=stop_pct,
                 target_pct=target_pct,
+                llm_called=True, **_ta_extras,
             )
 
         logger.info(
@@ -147,6 +166,8 @@ class MultiAgentStrategy:
             stop_type="none",
             reasoning=f"매수 신호 미달 ({chart_op.verdict}, confidence={chart_op.confidence:.2f})",
             ta_score=ta_score, risk_level=risk_level,
+            chart_verdict=chart_op.verdict, chart_confidence=chart_op.confidence,
+            llm_called=True, **_ta_extras,
         )
 
 

@@ -140,6 +140,7 @@ class Orchestrator:
                         self._pending_names[code] = name
                         self._pending_prices[code] = int(df["close"].iloc[-1])
                         logger.info(f"[{code}] 스윙 매수 신호 → 대기열 등록 ({signal.reasoning[:60]})")
+                    if signal.llm_called:
                         async with AsyncSessionLocal() as sig_session:
                             await save_signal(sig_session, Signal(
                                 stock_code=code,
@@ -153,7 +154,14 @@ class Orchestrator:
                                 stop_pct=signal.stop_pct,
                                 target_pct=signal.target_pct,
                                 reasoning=signal.reasoning,
-                                pending=True,
+                                pending=(signal.action == "buy"),
+                                rsi=signal.rsi,
+                                macd_hist=signal.macd_hist,
+                                bb_pct=signal.bb_pct,
+                                ema_ratio=signal.ema_ratio,
+                                volume_ratio=signal.volume_ratio,
+                                regime=signal.regime,
+                                current_price=int(signal.current_price),
                             ))
                 except Exception as e:
                     logger.warning(f"장전 분석 실패 {code}: {e}")

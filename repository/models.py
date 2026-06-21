@@ -40,6 +40,14 @@ class Signal(Base):
     target_pct = Column(Float)
     reasoning = Column(Text)
     pending = Column(Boolean, default=False)
+    # ML 학습용 피처
+    rsi = Column(Float)
+    macd_hist = Column(Float)
+    bb_pct = Column(Float)
+    ema_ratio = Column(Float)
+    volume_ratio = Column(Float)
+    regime = Column(String(20))
+    current_price = Column(Integer)
 
 
 class Trade(Base):
