@@ -21,11 +21,6 @@ class PortfolioGuard:
         if daily_pnl_pct <= -settings.daily_loss_cap:
             return False, f"일일 손실 한도 -{settings.daily_loss_cap*100:.0f}% 도달"
 
-        if self._peak_balance > 0:
-            drawdown = (self._peak_balance - current_balance) / self._peak_balance
-            if drawdown >= settings.max_drawdown_pct:
-                return False, f"최대 낙폭 {settings.max_drawdown_pct*100:.0f}% 도달 — 매매 중단"
-
         return True, "ok"
 
     def get_drawdown_pct(self, current_balance: int) -> float:

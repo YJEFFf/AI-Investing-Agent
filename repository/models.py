@@ -89,6 +89,7 @@ class Position(Base):
     trail_pct = Column(Float)       # trailing stop 비율 (LLM 손절가에서 계산)
     highest_price = Column(Float)   # 트레일링 스탑용 고점 추적
     trade_type = Column(String(10), default="swing")  # day | swing
+    regime = Column(String(20))  # 진입 시점 레짐 (high_volatility | trending_up | sideways 등)
     opened_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

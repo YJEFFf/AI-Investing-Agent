@@ -50,6 +50,7 @@ class OrderManager:
             trail_pct=round(trail_pct, 4),
             highest_price=fill_price,
             trade_type="swing",
+            regime=signal.regime or None,
             opened_at=datetime.utcnow(),
         )
         await save_position(session, position)

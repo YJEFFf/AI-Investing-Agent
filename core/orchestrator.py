@@ -556,14 +556,33 @@ class Orchestrator:
             if int(pos.qty) <= 0:
                 return
 
-            # 익절 체크 — 절반 먼저 매도, 나머지는 손익분기 trailing stop으로 유지
+            # 익절 체크
             if pos.target_price and current_price >= pos.target_price:
-                half_qty = int(pos.qty) // 2
-                if half_qty > 0 and int(pos.qty) > 1:
-                    # execute_partial_sell이 session.commit()을 호출하면 pos 속성이 expire됨
-                    # async 컨텍스트에서 재로드 불가하므로 commit 전에 미리 저장
-                    avg_price = int(pos.avg_price)
-                    stock_name = pos.stock_name
+                qty = int(pos.qty)
+                avg_price = int(pos.avg_price)
+                stock_name = pos.stock_name
+                is_high_vol = (pos.regime == "high_volatility")
+                half_qty = qty // 2
+
+                if is_high_vol or half_qty == 0 or qty <= 1:
+                    # HIGH_VOLATILITY: 전량 익절 (목표가 도달 시 즉시 전부 매도)
+                    logger.info(f"전량 익절: {code} x{qty} @ {current_price} (목표가: {pos.target_price}, 레짐: {pos.regime})")
+                    result, fill_price = await order_manager.execute_sell(
+                        session, code, qty, current_price, "take_profit"
+                    )
+                    if not result.success:
+                        if _is_retry:
+                            self._sell_perm_lock.add(code)
+                            logger.warning(f"익절 재시도 실패 — 장 마감까지 영구 차단: {code}")
+                        else:
+                            self._sell_fail_time[code] = time.monotonic()
+                            logger.warning(f"익절 주문 실패 — 5분 후 재시도 예약: {code}")
+                        await notify_sell_fail(code, stock_name, "take_profit", not _is_retry)
+                        return
+                    pnl = (fill_price - avg_price) * qty
+                    await notify_sell(code, stock_name, qty, fill_price, "take_profit", int(pnl))
+                else:
+                    # 일반 레짐: 절반 익절 후 나머지 trailing stop 유지
                     logger.info(f"절반 익절: {code} x{half_qty} @ {current_price} (목표가: {pos.target_price})")
                     result, fill_price = await order_manager.execute_partial_sell(
                         session, code, half_qty, current_price, "partial_take_profit"
@@ -579,31 +598,8 @@ class Orchestrator:
                         return
                     pnl = (fill_price - avg_price) * half_qty
                     await notify_sell(code, stock_name, half_qty, fill_price, "partial_take_profit", int(pnl))
-                    # 나머지 절반: target만 제거, trailing stop은 기존 계산값 유지
-                    # stop_price를 avg_price로 강제 이동하면 trailing 공식(max 구조)에 의해
-                    # 이후 stop이 내려갈 수 없어 사실상 BEP 고정손절이 되므로 제거
                     pos.target_price = None
                     await session.commit()
-                else:
-                    # 1주만 보유 시 전량 익절
-                    qty = int(pos.qty)
-                    avg_price = int(pos.avg_price)
-                    stock_name = pos.stock_name
-                    logger.info(f"익절 발동: {code} @ {current_price} (목표가: {pos.target_price})")
-                    result, fill_price = await order_manager.execute_sell(
-                        session, code, qty, current_price, "take_profit"
-                    )
-                    if not result.success:
-                        if _is_retry:
-                            self._sell_perm_lock.add(code)
-                            logger.warning(f"익절 재시도 실패 — 장 마감까지 영구 차단: {code}")
-                        else:
-                            self._sell_fail_time[code] = time.monotonic()
-                            logger.warning(f"익절 주문 실패 — 5분 후 재시도 예약: {code}")
-                        await notify_sell_fail(code, stock_name, "take_profit", not _is_retry)
-                        return
-                    pnl = (fill_price - avg_price) * qty
-                    await notify_sell(code, stock_name, qty, fill_price, "take_profit", int(pnl))
                 await self._refresh_balance()
                 return
 
