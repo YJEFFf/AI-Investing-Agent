@@ -50,6 +50,7 @@ class MultiAgentStrategy:
             bb_pct=round(bb_pct, 4),
             ema_ratio=round(ema_ratio, 4),
             volume_ratio=round(ta_result.volume_ratio, 2),
+            atr=round(ta_result.atr, 2),
             regime=regime.value,
             current_price=current_price,
         )

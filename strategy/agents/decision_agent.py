@@ -21,6 +21,7 @@ class TradeSignal:
     bb_pct: float = 0.0       # (현재가 - BB하단) / (BB상단 - BB하단), 0~1
     ema_ratio: float = 0.0    # EMA20 / EMA60, >1이면 상승 배열
     volume_ratio: float = 0.0
+    atr: float = 0.0
     regime: str = ""
     current_price: float = 0.0
     llm_called: bool = False  # LLM 분석까지 진행됐는지 여부

@@ -46,6 +46,7 @@ class Signal(Base):
     bb_pct = Column(Float)
     ema_ratio = Column(Float)
     volume_ratio = Column(Float)
+    atr = Column(Float)
     regime = Column(String(20))
     current_price = Column(Integer)
 

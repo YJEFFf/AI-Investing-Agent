@@ -160,6 +160,7 @@ class Orchestrator:
                                 bb_pct=signal.bb_pct,
                                 ema_ratio=signal.ema_ratio,
                                 volume_ratio=signal.volume_ratio,
+                                atr=signal.atr,
                                 regime=signal.regime,
                                 current_price=int(signal.current_price),
                             ))
@@ -287,6 +288,7 @@ class Orchestrator:
                     bb_pct=signal.bb_pct if signal.current_price else None,
                     ema_ratio=signal.ema_ratio if signal.current_price else None,
                     volume_ratio=signal.volume_ratio if signal.current_price else None,
+                    atr=signal.atr if signal.current_price else None,
                     regime=signal.regime if signal.current_price else None,
                     current_price=int(signal.current_price) if signal.current_price else None,
                 )
@@ -453,6 +455,7 @@ class Orchestrator:
                     bb_pct=sig.bb_pct or 0.0,
                     ema_ratio=sig.ema_ratio or 0.0,
                     volume_ratio=sig.volume_ratio or 0.0,
+                    atr=sig.atr or 0.0,
                     regime=sig.regime or "",
                     current_price=float(sig.current_price) if sig.current_price else 0.0,
                     llm_called=True,
