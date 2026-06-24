@@ -10,14 +10,14 @@ class MarketRegime(str, enum.Enum):
     HIGH_VOLATILITY = "high_volatility"
 
 
-def detect_regime(kospi_df: pd.DataFrame) -> MarketRegime:
-    """KOSPI 일봉 데이터로 현재 시장 레짐 분류"""
-    if len(kospi_df) < 60:
+def detect_regime(ohlcv_df: pd.DataFrame) -> MarketRegime:
+    """개별 종목 일봉 데이터로 레짐 분류"""
+    if len(ohlcv_df) < 60:
         return MarketRegime.RANGING
 
-    close = kospi_df["close"]
-    high = kospi_df["high"]
-    low = kospi_df["low"]
+    close = ohlcv_df["close"]
+    high = ohlcv_df["high"]
+    low = ohlcv_df["low"]
 
     ema_60 = ta.ema(close, length=60)
     adx_df = ta.adx(high, low, close, length=14)
@@ -36,8 +36,8 @@ def detect_regime(kospi_df: pd.DataFrame) -> MarketRegime:
     if current_price < current_ema60 and ret_20d < -0.02:
         return MarketRegime.TRENDING_DOWN
 
-    # 고변동장
-    if atr_pct > 0.02:
+    # 고변동장 (개별 종목은 지수보다 변동성이 크므로 3% 기준)
+    if atr_pct > 0.03:
         return MarketRegime.HIGH_VOLATILITY
 
     # 상승 추세 (ADX > 25로 추세 강도 확인 — 일시적 반등과 구분)

@@ -21,7 +21,6 @@ from risk.portfolio_guard import portfolio_guard
 from risk.position_sizer import calc_position_size
 from risk.stop_loss import should_stop, update_trailing_stop
 from strategy.multi_agent_strategy import multi_agent_strategy
-from strategy.regime_detector import detect_regime, MarketRegime
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
@@ -41,7 +40,6 @@ class Orchestrator:
         self._pending_names: dict[str, str] = {}               # 종목코드 → 종목명
         self._pending_prices: dict[str, int] = {}              # 종목코드 → 분석 시점 종가 (갭 필터용)
         self._watchlist: list[dict] = []
-        self._kospi_df = None
         self._cached_balance: dict = {"available_cash": 0, "total_eval": 0, "unrealized_pnl": 0}
         self._sell_fail_time: dict[str, float] = {}             # 최초 매도 실패 시각 (monotonic) — 5분 후 재시도
         self._sell_perm_lock: set[str] = set()                 # 재시도 후에도 실패 → 장 마감까지 영구 차단
@@ -76,13 +74,9 @@ class Orchestrator:
 
         drawdown_pct = portfolio_guard.get_drawdown_pct(balance["total_eval"])
 
-        self._kospi_df = await fetcher.fetch_kospi(250)
-
-        regime = detect_regime(self._kospi_df)
-
         config = self._load_watchlist_config()
         if config.get("mode") == "auto":
-            screened = await stock_screener.run(regime=regime)
+            screened = await stock_screener.run()
             self._watchlist = screened if screened else config.get("stocks", [])
             logger.info(f"자동 스크리닝 완료: {len(self._watchlist)}개 종목 선정")
         else:
@@ -98,11 +92,6 @@ class Orchestrator:
                 logger.debug(f"일봉 로드: {code}")
             except Exception as e:
                 logger.warning(f"일봉 로드 실패 {code}: {e}")
-
-        # 하락장이면 분석 전체 스킵
-        if regime == MarketRegime.TRENDING_DOWN:
-            logger.info("하락장 레짐 — 스윙 매수 분석 전체 스킵")
-            return
 
         # 실제 포지션/손익 조회
         async with AsyncSessionLocal() as session:
@@ -130,7 +119,6 @@ class Orchestrator:
                         stock_code=code,
                         stock_name=name,
                         ohlcv_df=df,
-                        kospi_df=self._kospi_df,
                         open_positions=open_pos_count,
                         daily_pnl_pct=daily_pnl_pct,
                         drawdown_pct=drawdown_pct,
@@ -177,6 +165,7 @@ class Orchestrator:
                 "name": next((s["name"] for s in self._watchlist if s["code"] == code), code),
                 "confidence": sig.chart_confidence or 0.0,
                 "reasoning": sig.reasoning[:60],
+                "regime": sig.regime or "",
             }
             for code, sig in self._pending_signals.items()
         ]
@@ -428,10 +417,14 @@ class Orchestrator:
         await self.pre_market_setup(is_retry=True)
 
     async def _restore_pending_signals(self) -> None:
-        """재시작 시 DB에서 오늘 미실행 pending 신호 복원"""
+        """DB에서 오늘 미실행 pending 신호 복원 — DB가 단일 진실의 소스"""
         try:
             async with AsyncSessionLocal() as session:
                 pending = await get_pending_signals(session)
+            # 기존 메모리를 DB 상태로 교체 (수동 스크립트 등 외부 저장 반영)
+            self._pending_signals.clear()
+            self._pending_names.clear()
+            self._pending_prices.clear()
             if not pending:
                 return
             for sig in pending:
@@ -461,11 +454,8 @@ class Orchestrator:
                     llm_called=True,
                 )
                 self._pending_names[sig.stock_code] = sig.stock_name or sig.stock_code
-                # 분석 기준가 근사: stop_price / (1 - stop_pct)
-                if sig.stop_pct and sig.stop_pct > 0:
-                    ref_price = self._pending_signals[sig.stock_code].stop_price
-                    if ref_price and ref_price > 0:
-                        self._pending_prices[sig.stock_code] = round(ref_price / (1 - sig.stop_pct))
+                if sig.current_price:
+                    self._pending_prices[sig.stock_code] = int(sig.current_price)
             logger.info(f"DB에서 pending 신호 {len(pending)}개 복원: {[s.stock_code for s in pending]}")
         except Exception as e:
             logger.warning(f"pending 신호 복원 실패: {e}")

@@ -60,10 +60,10 @@ async def notify_pre_market_summary(
     buy_signals: list[dict],
     is_retry: bool = False,
 ) -> None:
-    label = "재분석 완료" if is_retry else "장전 분석 완료"
+    label = "장전 분석 완료"
     if buy_signals:
         lines = "\n".join(
-            f"  • {s['name']}({s['code']}) | confidence {s['confidence']:.2f}"
+            f"  • {s['name']}({s['code']}) | confidence {s['confidence']:.2f} | {s.get('regime', '')}"
             for s in buy_signals
         )
         text = (
