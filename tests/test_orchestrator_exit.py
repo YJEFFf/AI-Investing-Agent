@@ -168,8 +168,8 @@ async def test_partial_tp_sells_half_qty(db_session, orch):
     assert partial_mock.call_args.args[2] == 5   # half_qty = 10 // 2
 
 
-async def test_partial_tp_sets_breakeven_stop(db_session, orch):
-    # partial TP 후 stop_price == avg_price(10,000), target_price == None
+async def test_partial_tp_removes_target_price(db_session, orch):
+    # partial TP 후 target_price = None, stop/trail_pct는 그대로 유지
     await seed_position(
         db_session, qty=10, avg_price=10_000, stop_price=9_500, target_price=11_000
     )
@@ -187,14 +187,12 @@ async def test_partial_tp_sets_breakeven_stop(db_session, orch):
 
     pos = await get_position(db_session, "005930")
     assert pos is not None              # 포지션 유지
-    assert int(pos.stop_price) == 10_000  # 손익분기 이동
-    assert pos.target_price is None       # target 제거
+    assert pos.target_price is None     # target 제거
+    assert int(pos.stop_price) == 9_500  # stop 그대로 (trailing이 이어받음)
 
 
-async def test_partial_tp_widens_trail_pct(db_session, orch):
-    # partial TP 후 trail_pct가 partial_tp_trail_pct(0.08)로 확대됨
-    from config.settings import settings
-
+async def test_partial_tp_trailing_continues_after(db_session, orch):
+    # partial TP 후 나머지 포지션에 trailing stop이 계속 작동함
     await seed_position(
         db_session, qty=10, avg_price=10_000, stop_price=9_500,
         target_price=11_000, trail_pct=0.05,
@@ -212,7 +210,7 @@ async def test_partial_tp_widens_trail_pct(db_session, orch):
         await orch._check_exit_conditions("005930", 11_000)
 
     pos = await get_position(db_session, "005930")
-    assert pos.trail_pct == settings.partial_tp_trail_pct  # 0.08
+    assert pos.trail_pct == 0.05  # trail_pct 그대로
 
 
 # ── 전량 익절 (1주) ──────────────────────────────────────────────────────────
