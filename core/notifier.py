@@ -96,6 +96,15 @@ async def notify_sell_fail(code: str, name: str, reason: str, will_retry: bool) 
 
 
 
+async def notify_buy_fail(code: str, name: str, reason: str) -> None:
+    text = (
+        f"⚠️ <b>매수 주문 실패</b>\n"
+        f"종목: {name} ({code})\n"
+        f"사유: {reason}"
+    )
+    await _send(text)
+
+
 async def notify_gap_skip(code: str, name: str, analysis_price: int, open_price: int, gap_pct: float) -> None:
     text = (
         f"⏭ <b>갭다운 스킵</b>\n"

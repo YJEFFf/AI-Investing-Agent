@@ -24,7 +24,7 @@ from strategy.multi_agent_strategy import multi_agent_strategy
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
-from core.notifier import notify_buy, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip, notify_pre_close_exit
+from core.notifier import notify_buy, notify_buy_fail, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip, notify_pre_close_exit
 from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -288,13 +288,16 @@ class Orchestrator:
                     signal_id=signal_record.id,
                 )
                 if not result.success:
-                    logger.warning(f"매수 실패 — 텔레그램 알림 생략: {code}")
+                    logger.warning(f"매수 실패: {code} — {result.message}")
                     if "40250000" in result.message:
                         consecutive_insufficient += 1
+                        await notify_buy_fail(code, stock_name, "잔고 부족")
                         if consecutive_insufficient >= 2:
                             logger.info("잔고 부족 연속 2회 — 이후 신호 실행 중단")
                             break
                         logger.info(f"잔고 부족 1회 ({code}) — 다음 신호 계속")
+                    else:
+                        await notify_buy_fail(code, stock_name, result.message)
                     continue
                 notify_stop = round(fill_price * (1 - signal.stop_pct))
                 notify_target = round(fill_price * (1 + signal.target_pct))
