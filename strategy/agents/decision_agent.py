@@ -25,3 +25,4 @@ class TradeSignal:
     regime: str = ""
     current_price: float = 0.0
     llm_called: bool = False  # LLM 분석까지 진행됐는지 여부
+    signal_db_id: int = 0    # signals 테이블 PK — 중복 저장 방지용

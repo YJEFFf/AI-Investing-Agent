@@ -130,7 +130,7 @@ class Orchestrator:
                         logger.info(f"[{code}] 스윙 매수 신호 → 대기열 등록 ({signal.reasoning[:60]})")
                     if signal.llm_called:
                         async with AsyncSessionLocal() as sig_session:
-                            await save_signal(sig_session, Signal(
+                            sig_record = Signal(
                                 stock_code=code,
                                 stock_name=name,
                                 ta_score=signal.ta_score,
@@ -151,7 +151,11 @@ class Orchestrator:
                                 atr=signal.atr,
                                 regime=signal.regime,
                                 current_price=int(signal.current_price),
-                            ))
+                            )
+                            await save_signal(sig_session, sig_record)
+                            # buy 신호면 signal_db_id 보관 — market_open 중복 저장 방지
+                            if signal.action == "buy" and code in self._pending_signals:
+                                self._pending_signals[code].signal_db_id = sig_record.id
                 except Exception as e:
                     logger.warning(f"장전 분석 실패 {code}: {e}")
 
@@ -263,29 +267,35 @@ class Orchestrator:
 
 
                 stock_name = self._pending_names.get(code) or next((s["name"] for s in self._watchlist if s["code"] == code), code)
-                signal_record = Signal(
-                    stock_code=code,
-                    ta_score=signal.ta_score,
-                    chart_verdict=signal.chart_verdict,
-                    chart_confidence=signal.chart_confidence,
-                    risk_level=signal.risk_level,
-                    final_action=signal.action,
-                    position_size_pct=signal.position_ratio,
-                    reasoning=signal.reasoning,
-                    rsi=signal.rsi if signal.current_price else None,
-                    macd_hist=signal.macd_hist if signal.current_price else None,
-                    bb_pct=signal.bb_pct if signal.current_price else None,
-                    ema_ratio=signal.ema_ratio if signal.current_price else None,
-                    volume_ratio=signal.volume_ratio if signal.current_price else None,
-                    atr=signal.atr if signal.current_price else None,
-                    regime=signal.regime if signal.current_price else None,
-                    current_price=int(signal.current_price) if signal.current_price else None,
-                )
-                await save_signal(session, signal_record)
-                logger.debug(f"signal 저장 완료: id={signal_record.id}, code={code}")
+                if signal.signal_db_id:
+                    # 장전 분析 때 이미 저장된 signal — 중복 저장 없이 id 재사용
+                    signal_id = signal.signal_db_id
+                else:
+                    # 복원 경로 fallback: signal_db_id가 없는 경우에만 신규 저장
+                    signal_record = Signal(
+                        stock_code=code,
+                        ta_score=signal.ta_score,
+                        chart_verdict=signal.chart_verdict,
+                        chart_confidence=signal.chart_confidence,
+                        risk_level=signal.risk_level,
+                        final_action=signal.action,
+                        position_size_pct=signal.position_ratio,
+                        reasoning=signal.reasoning,
+                        rsi=signal.rsi or None,
+                        macd_hist=signal.macd_hist or None,
+                        bb_pct=signal.bb_pct or None,
+                        ema_ratio=signal.ema_ratio or None,
+                        volume_ratio=signal.volume_ratio or None,
+                        atr=signal.atr or None,
+                        regime=signal.regime or None,
+                        current_price=int(signal.current_price) if signal.current_price else None,
+                    )
+                    await save_signal(session, signal_record)
+                    signal_id = signal_record.id
+                logger.debug(f"signal id={signal_id}, code={code}")
                 result, fill_price = await order_manager.execute_buy(
                     session, code, stock_name, qty, signal, current_price,
-                    signal_id=signal_record.id,
+                    signal_id=signal_id,
                 )
                 if not result.success:
                     logger.warning(f"매수 실패: {code} — {result.message}")
@@ -455,6 +465,7 @@ class Orchestrator:
                     regime=sig.regime or "",
                     current_price=float(sig.current_price) if sig.current_price else 0.0,
                     llm_called=True,
+                    signal_db_id=sig.id,
                 )
                 self._pending_names[sig.stock_code] = sig.stock_name or sig.stock_code
                 if sig.current_price:
