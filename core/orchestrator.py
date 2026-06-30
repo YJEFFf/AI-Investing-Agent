@@ -24,7 +24,7 @@ from strategy.multi_agent_strategy import multi_agent_strategy
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
-from core.notifier import notify_buy, notify_buy_fail, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip, notify_pre_close_exit
+from core.notifier import notify_buy, notify_buy_fail, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip
 from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -343,52 +343,6 @@ class Orchestrator:
         async with AsyncSessionLocal() as session:
             await clear_pending_signals(session)
 
-    async def pre_close(self) -> None:
-        """15:20 장마감 전 스윙 포지션 점검"""
-        if not is_trading_day():
-            logger.info("휴장일 — 장마감 전 점검 스킵")
-            return
-        logger.info("장마감 전 스윙 포지션 점검")
-        async with AsyncSessionLocal() as session:
-            positions = await get_open_positions_by_market(session, "KR")
-        from kis.market_data import market_data as md
-        for pos in positions:
-            try:
-                avg_price = int(pos.avg_price)
-                highest = int(pos.highest_price or avg_price)
-                # 한 번이라도 이익권 진입한 종목은 trailing stop이 보호 — 스킵
-                if highest > avg_price:
-                    continue
-                try:
-                    info = await md.get_current_price(pos.stock_code)
-                    current_price = info["price"]
-                except Exception:
-                    logger.warning(f"현재가 조회 실패 [{pos.stock_code}] — pre_close 스킵")
-                    continue
-                loss_pct = (current_price - avg_price) / avg_price
-                if loss_pct <= -0.05:
-                    logger.info(
-                        f"[{pos.stock_code}] 장마감 전 손절: {avg_price:,} → {current_price:,} ({loss_pct:.1%})"
-                    )
-                    result, fill_price = None, current_price
-                    for attempt in range(4):
-                        async with AsyncSessionLocal() as session:
-                            result, fill_price = await order_manager.execute_sell(
-                                session, pos.stock_code, int(pos.qty), current_price, "pre_close_loss"
-                            )
-                        if result.success:
-                            break
-                        logger.warning(f"[{pos.stock_code}] pre_close 매도 실패 (시도 {attempt + 1}/4), 15초 후 재시도")
-                        await asyncio.sleep(15)
-                    if result and result.success:
-                        await notify_pre_close_exit(
-                            pos.stock_code, pos.stock_name, int(pos.qty),
-                            avg_price, fill_price, loss_pct,
-                        )
-                    else:
-                        logger.error(f"[{pos.stock_code}] pre_close 매도 최종 실패 — stop_loss에 위임")
-            except Exception as e:
-                logger.error(f"pre_close 점검 오류 [{pos.stock_code}]: {e}")
 
     async def post_market(self) -> None:
         """15:35 장 후 정산"""
