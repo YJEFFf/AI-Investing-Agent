@@ -60,6 +60,10 @@ class Orchestrator:
             self._pending_prices.clear()
             async with AsyncSessionLocal() as session:
                 await clear_pending_signals(session)
+        else:
+            # 재시작 등으로 메모리가 비어있으면 DB에서 복원 — 중복 체크 기준으로 사용
+            if not self._pending_signals:
+                await self._restore_pending_signals()
 
         try:
             balance = await kis_account.get_balance()
