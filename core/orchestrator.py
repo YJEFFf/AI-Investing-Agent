@@ -53,12 +53,13 @@ class Orchestrator:
         if not is_trading_day():
             logger.info("휴장일 — 장 마감 후 분석 스킵")
             return
-        logger.info("장전 준비 시작")
-        self._pending_signals.clear()
-        self._pending_names.clear()
-        self._pending_prices.clear()
-        async with AsyncSessionLocal() as session:
-            await clear_pending_signals(session)
+        logger.info("장전 준비 시작" if not is_retry else f"재분析 시작 (기존 pending {len(self._pending_signals)}개 유지)")
+        if not is_retry:
+            self._pending_signals.clear()
+            self._pending_names.clear()
+            self._pending_prices.clear()
+            async with AsyncSessionLocal() as session:
+                await clear_pending_signals(session)
 
         try:
             balance = await kis_account.get_balance()
@@ -108,7 +109,10 @@ class Orchestrator:
             code = stock["code"]
             name = stock.get("name", code)
             if code in already_held:
-                logger.debug(f"{code} 이미 보유 중 — 분석 스킵")
+                logger.debug(f"{code} 이미 보유 중 — 분析 스킵")
+                return
+            if is_retry and code in self._pending_signals:
+                logger.debug(f"{code} 이미 pending — 재분析 스킵")
                 return
             df = self._ohlcv_buffer.get(code)
             if df is None or df.empty or len(df) < 60:
