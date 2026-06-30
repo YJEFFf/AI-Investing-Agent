@@ -381,7 +381,7 @@ class Orchestrator:
             return
         async with AsyncSessionLocal() as session:
             pending = await get_pending_signals(session)
-        count = len(pending)
+        count = len({sig.stock_code for sig in pending})  # 중복 종목 제거 후 고유 수
         if count >= 5:
             logger.info(f"재분석 스킵 — pending 신호 {count}개 (5개 이상 충족)")
             # 메모리가 비어있으면 DB에서 복원 (재시작 후 skip된 경우 대비)
