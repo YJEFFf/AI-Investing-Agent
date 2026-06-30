@@ -368,14 +368,14 @@ class Orchestrator:
 
 
     async def retry_analysis_if_needed(self) -> None:
-        """16:00~00:00 매시 정각 — pending 신호 3개 미만이면 재분석"""
+        """16:00~00:00 매시 정각 — pending 신호 5개 미만이면 재분석"""
         if not is_trading_day():
             return
         async with AsyncSessionLocal() as session:
             pending = await get_pending_signals(session)
         count = len(pending)
-        if count >= 3:
-            logger.info(f"재분석 스킵 — pending 신호 {count}개 (3개 이상 충족)")
+        if count >= 5:
+            logger.info(f"재분석 스킵 — pending 신호 {count}개 (5개 이상 충족)")
             # 메모리가 비어있으면 DB에서 복원 (재시작 후 skip된 경우 대비)
             if not self._pending_signals:
                 await self._restore_pending_signals()
