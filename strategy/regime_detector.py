@@ -37,8 +37,8 @@ def detect_regime(ohlcv_df: pd.DataFrame) -> MarketRegime:
     if current_ema20 < current_ema60:
         return MarketRegime.TRENDING_DOWN
 
-    # 고변동장 — 개별 종목 기준 5% 이상을 진짜 고변동성으로 판단
-    if atr_pct > 0.05:
+    # 고변동장 — ATR% 15% 이상을 진짜 고변동성으로 판단 (거래대금 상위 종목 특성 반영)
+    if atr_pct > 0.15:
         return MarketRegime.HIGH_VOLATILITY
 
     # 상승 추세 (ADX > 25로 추세 강도 확인 — 일시적 반등과 구분)
