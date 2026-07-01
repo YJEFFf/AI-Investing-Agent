@@ -81,16 +81,21 @@ class Orchestrator:
 
         config = self._load_watchlist_config()
         if config.get("mode") == "auto":
-            screened = await stock_screener.run()
-            self._watchlist = screened if screened else config.get("stocks", [])
-            logger.info(f"자동 스크리닝 완료: {len(self._watchlist)}개 종목 선정")
+            if is_retry and self._watchlist:
+                logger.info(f"재분析 — 기존 워치리스트 {len(self._watchlist)}개 재사용 (스크리닝 스킵)")
+            else:
+                screened = await stock_screener.run()
+                self._watchlist = screened if screened else config.get("stocks", [])
+                logger.info(f"자동 스크리닝 완료: {len(self._watchlist)}개 종목 선정")
         else:
             self._watchlist = config.get("stocks", [])
             logger.info(f"수동 워치리스트: {len(self._watchlist)}개 종목")
 
-        # 일봉 OHLCV 로드
+        # 일봉 OHLCV 로드 (재분析 시 버퍼에 없는 종목만)
         for stock in self._watchlist:
             code = stock["code"]
+            if is_retry and code in self._ohlcv_buffer:
+                continue
             try:
                 df = await fetcher.fetch_daily(code, 120)
                 self._ohlcv_buffer[code] = df
