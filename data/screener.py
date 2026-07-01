@@ -110,9 +110,11 @@ class StockScreener:
         selected = scored[:top_n]
 
         if selected:
+            dropped = scored[top_n:]
+            dropped_info = f" | 탈락 {len(dropped)}개: {dropped[0].ta_score:.1f}~{dropped[-1].ta_score:.1f}점" if dropped else ""
             logger.info(
                 f"스크리너: {len(scored)}개 평가 완료 → 상위 {len(selected)}개 선정 "
-                f"(TA {selected[-1].ta_score:.1f}~{selected[0].ta_score:.1f}점)"
+                f"(TA {selected[-1].ta_score:.1f}~{selected[0].ta_score:.1f}점){dropped_info}"
             )
         return [{"code": s.code, "name": s.name} for s in selected]
 
