@@ -96,25 +96,48 @@ class StockScreener:
             return []
 
         logger.info(f"스크리너: {len(candidates)}개 후보 TA 점수 계산 중...")
-        sem = asyncio.Semaphore(10)
+
+        # 1차: 세마포어 5로 동시 요청 제한 (KIS API 500 에러 방지)
+        sem = asyncio.Semaphore(5)
 
         async def _score_with_sem(c: dict) -> "_ScoredStock | None":
             async with sem:
                 return await self._score(c, regime)
 
-        tasks = [_score_with_sem(c) for c in candidates]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(
+            *[_score_with_sem(c) for c in candidates], return_exceptions=True
+        )
 
         scored = [r for r in results if isinstance(r, _ScoredStock)]
+        failed = [
+            candidates[i] for i, r in enumerate(results)
+            if not isinstance(r, _ScoredStock)
+        ]
+
+        # 2차: 1차 실패 종목 재시도 (2초 대기 후 세마포어 3)
+        if failed:
+            logger.info(f"스크리너: 1차 실패 {len(failed)}개 → 2초 후 재시도")
+            await asyncio.sleep(2)
+            sem2 = asyncio.Semaphore(3)
+
+            async def _retry_with_sem(c: dict) -> "_ScoredStock | None":
+                async with sem2:
+                    return await self._score(c, regime)
+
+            retry_results = await asyncio.gather(
+                *[_retry_with_sem(c) for c in failed], return_exceptions=True
+            )
+            retry_scored = [r for r in retry_results if isinstance(r, _ScoredStock)]
+            scored.extend(retry_scored)
+            logger.info(f"스크리너: 재시도 {len(retry_scored)}개 추가 성공")
+
         scored.sort(key=lambda x: x.ta_score, reverse=True)
         selected = scored[:top_n]
 
         if selected:
-            dropped = scored[top_n:]
-            dropped_info = f" | 탈락 {len(dropped)}개: {dropped[0].ta_score:.1f}~{dropped[-1].ta_score:.1f}점" if dropped else ""
             logger.info(
                 f"스크리너: {len(scored)}개 평가 완료 → 상위 {len(selected)}개 선정 "
-                f"(TA {selected[-1].ta_score:.1f}~{selected[0].ta_score:.1f}점){dropped_info}"
+                f"(TA {selected[-1].ta_score:.1f}~{selected[0].ta_score:.1f}점)"
             )
         return [{"code": s.code, "name": s.name} for s in selected]
 
