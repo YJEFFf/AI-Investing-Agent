@@ -117,6 +117,15 @@ async def notify_gap_skip(code: str, name: str, analysis_price: int, open_price:
 
 
 
+async def notify_market_gap_halt(gap_count: int, total: int, gap_ratio: float) -> None:
+    text = (
+        f"🚫 <b>시장 갭다운 — 전체 매수 중단</b>\n"
+        f"신호 {total}개 중 {gap_count}개 갭다운 ({gap_ratio:.0%})\n"
+        f"당일 매수 신호 전체 취소"
+    )
+    await _send(text)
+
+
 async def notify_daily_summary(signals: int, trades: int, sells: int, pnl: int) -> None:
     text = (
         f"📊 <b>오늘 결과</b>\n"

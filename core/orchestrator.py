@@ -24,7 +24,7 @@ from strategy.multi_agent_strategy import multi_agent_strategy
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
-from core.notifier import notify_buy, notify_buy_fail, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip
+from core.notifier import notify_buy, notify_buy_fail, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip, notify_market_gap_halt
 from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -237,6 +237,42 @@ class Orchestrator:
                 key=lambda x: x[1].chart_confidence,
                 reverse=True,
             )
+
+            # === Pass 1: 전체 갭다운 비율 사전 점검 ===
+            # 매수 대상(이미 보유 제외) 현재가를 병렬 조회해 갭다운 비율 계산
+            # 갭다운 ≥ 50%면 시장 전체 하락 출발로 판단 → 전체 매수 중단
+            target_codes = [c for c, _ in sorted_signals if c not in already_held]
+            price_map: dict[str, int] = {}
+
+            async def _fetch_price(c: str) -> None:
+                try:
+                    info = await md.get_current_price(c)
+                    price_map[c] = info["price"]
+                except Exception:
+                    pass
+
+            await asyncio.gather(*[_fetch_price(c) for c in target_codes])
+
+            gap_down_codes: set[str] = set()
+            for c in target_codes:
+                ap = self._pending_prices.get(c)
+                cp = price_map.get(c)
+                if ap and cp and (cp - ap) / ap < -0.02:
+                    gap_down_codes.add(c)
+
+            if target_codes:
+                gap_ratio = len(gap_down_codes) / len(target_codes)
+                if gap_ratio >= 0.5:
+                    logger.info(
+                        f"시장 갭다운 감지 — {len(gap_down_codes)}/{len(target_codes)}개 갭다운 ({gap_ratio:.0%}) → 전체 매수 중단"
+                    )
+                    await notify_market_gap_halt(len(gap_down_codes), len(target_codes), gap_ratio)
+                    self._pending_signals.clear()
+                    async with AsyncSessionLocal() as session:
+                        await clear_pending_signals(session)
+                    return
+
+            # === Pass 2: 정상 매수 진행 ===
             consecutive_insufficient = 0
             for code, signal in sorted_signals:
                 if code in already_held:
