@@ -49,7 +49,7 @@ class Orchestrator:
             return yaml.safe_load(f)
 
     async def pre_market_setup(self, is_retry: bool = False) -> None:
-        """14:50 장 마감 직전 분석 — 일봉 데이터 로드 + 차트 분석 → 15:20 매수 실행"""
+        """15:40 장 마감 후 분석 — 일봉 데이터 로드 + 차트 이미지 분석 → 다음날 09:00 매수 실행"""
         if not is_trading_day():
             logger.info("휴장일 — 장 마감 후 분석 스킵")
             return
@@ -189,11 +189,11 @@ class Orchestrator:
         await notify_pre_market_summary(len(self._watchlist), signal_list, is_retry=is_retry)
 
     async def market_open(self) -> None:
-        """09:00 장 시작 — 포지션 관리 폴링 시작 (매수는 15:20에 실행)"""
+        """09:00 장 시작 — 전일 분석 결과 매수 실행"""
         if not is_trading_day():
             logger.info("휴장일 — 장 시작 스킵")
             return
-        logger.info("장 시작 — 포지션 관리 활성화")
+        logger.info("장 시작 — 매매 활성화")
         self._trading_active = True
 
         if not settings.is_paper:
@@ -210,20 +210,17 @@ class Orchestrator:
             portfolio_guard.update_peak(balance["total_eval"])
         except Exception as e:
             logger.warning(f"장 시작 잔고 조회 실패 — 캐시 사용: {e}")
+            balance = self._cached_balance
 
-    async def execute_pending_buy(self) -> None:
-        """15:20 장 마감 직전 매수 실행 — 14:50 분析 결과 집행"""
-        if not is_trading_day():
-            logger.info("휴장일 — 매수 실행 스킵")
-            return
+        # 장전 매수 신호 실행 — 메모리가 비어있으면 DB에서 복원
         if not self._pending_signals:
             await self._restore_pending_signals()
         if self._pending_signals:
-            logger.info(f"장 마감 직전 매수 신호 실행: {len(self._pending_signals)}개")
+            logger.info(f"장전 매수 신호 실행: {len(self._pending_signals)}개")
             await self._execute_pending_signals()
 
     async def _execute_pending_signals(self) -> None:
-        """수집된 매수 신호 일괄 집행"""
+        """장전에 수집된 매수 신호 일괄 집행"""
         from kis.market_data import market_data as md
 
         async with AsyncSessionLocal() as session:
@@ -419,6 +416,21 @@ class Orchestrator:
             )
 
 
+    async def retry_analysis_if_needed(self) -> None:
+        """16:00~00:00 매시 정각 — pending 신호 5개 미만이면 재분석"""
+        if not is_trading_day():
+            return
+        async with AsyncSessionLocal() as session:
+            pending = await get_pending_signals(session)
+        count = len({sig.stock_code for sig in pending})  # 중복 종목 제거 후 고유 수
+        if count >= 5:
+            logger.info(f"재분석 스킵 — pending 신호 {count}개 (5개 이상 충족)")
+            # 메모리가 비어있으면 DB에서 복원 (재시작 후 skip된 경우 대비)
+            if not self._pending_signals:
+                await self._restore_pending_signals()
+            return
+        logger.info(f"pending 신호 {count}개 → 재분석 시작")
+        await self.pre_market_setup(is_retry=True)
 
     async def _restore_pending_signals(self) -> None:
         """DB에서 오늘 미실행 pending 신호 복원 — DB가 단일 진실의 소스"""
@@ -652,29 +664,33 @@ class Orchestrator:
         logger.info("스케줄러 시작됨")
 
         now = datetime.now()
-        t_1450 = now.replace(hour=14, minute=50, second=0, microsecond=0)
-        t_1520 = now.replace(hour=15, minute=20, second=0, microsecond=0)
+        t_1800 = now.replace(hour=18, minute=0, second=0, microsecond=0)
         t_1530 = now.replace(hour=15, minute=30, second=0, microsecond=0)
-        if t_1450 <= now < t_1520:
-            # 14:50~15:20 사이 시작: 즉시 분석 실행 (15:20 매수는 스케줄러가 처리)
-            logger.info("14:50~15:20 사이 시작 — 즉시 분석 실행")
-            await self.pre_market_setup()
-        elif t_1520 <= now < t_1530:
-            # 15:20~15:30 사이 시작: pending 복원 후 즉시 매수
-            logger.info("15:20~15:30 사이 시작 — pending 복원 후 즉시 매수")
+        if now >= t_1800:
+            # 18:00 이후 시작: 당일 분석 즉시 실행
+            logger.info("18:00 이후 시작 — 즉시 분석 실행")
+            await self.retry_analysis_if_needed()
+        elif t_1530 <= now < t_1800:
+            # 15:30~18:00 사이: 스케줄러가 18:00에 분석 실행
+            logger.info("15:30~18:00 사이 시작 — 스케줄러 대기")
+        else:
+            # 장중(09:00~15:30) 또는 장전: 재분석 스킵, 포지션 관리만
+            logger.info("장중/장전 시작 — 재분석 스킵, 폴링으로 포지션 관리만 진행")
             await self._restore_pending_signals()
-            if self._pending_signals:
+            # 장중 재시작 시 미실행 신호 즉시 집행
+            t_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            t_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+            if t_open <= now < t_close and self._pending_signals:
+                logger.info(f"장중 재시작 — pending {len(self._pending_signals)}개 즉시 실행")
                 self._trading_active = True
                 try:
                     balance = await kis_account.get_balance()
                     self._cached_balance = balance
                 except Exception:
                     pass
+                if settings.is_paper:
+                    asyncio.create_task(self._polling_loop())
                 await self._execute_pending_signals()
-        else:
-            # 그 외 (09:00~14:50, 15:30 이후): 폴링 + pending 복원
-            logger.info("폴링 모드 시작 — 포지션 관리만 진행")
-            await self._restore_pending_signals()
 
         if not settings.is_paper:
             asyncio.create_task(kis_ws.connect_and_run())
