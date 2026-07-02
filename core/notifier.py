@@ -117,6 +117,16 @@ async def notify_gap_skip(code: str, name: str, analysis_price: int, open_price:
 
 
 
+async def notify_gap_up_skip(code: str, name: str, analysis_price: int, open_price: int, gap_pct: float) -> None:
+    text = (
+        f"\u23eb <b>갭업 스킵</b>\n"
+        f"종목: {name} ({code})\n"
+        f"분석 기준가: {analysis_price:,}원 → 시초가: {open_price:,}원\n"
+        f"갭: +{gap_pct:.1%} (고점 진입 위험)"
+    )
+    await _send(text)
+
+
 async def notify_market_gap_halt(gap_count: int, total: int, gap_ratio: float) -> None:
     text = (
         f"🚫 <b>시장 갭다운 — 전체 매수 중단</b>\n"

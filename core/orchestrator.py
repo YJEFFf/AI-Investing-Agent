@@ -24,7 +24,7 @@ from strategy.multi_agent_strategy import multi_agent_strategy
 from execution.order_manager import order_manager
 from data.screener import stock_screener
 from strategy.agents.decision_agent import TradeSignal
-from core.notifier import notify_buy, notify_buy_fail, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip, notify_market_gap_halt
+from core.notifier import notify_buy, notify_buy_fail, notify_sell, notify_sell_fail, notify_daily_summary, notify_pre_market_summary, notify_gap_skip, notify_gap_up_skip, notify_market_gap_halt
 from core.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
@@ -293,14 +293,18 @@ class Orchestrator:
                     logger.warning(f"현재가 조회 실패 {code}: {e}")
                     continue
 
-                # 갭다운 필터: 시초가가 분석 기준가 대비 -2% 이상 하락 시 스킵
+                # 갭 필터: 시초가가 분석 기준가 대비 -2% 이하 갭다운 또는 +3% 초과 갭업 시 스킵
                 analysis_price = self._pending_prices.get(code)
                 if analysis_price and analysis_price > 0:
                     gap_pct = (current_price - analysis_price) / analysis_price
+                    stock_name = self._pending_names.get(code, code)
                     if gap_pct < -0.02:
-                        stock_name = self._pending_names.get(code, code)
                         logger.info(f"{code} 갭다운 스킵: 기준가 {analysis_price:,} → 시초가 {current_price:,} ({gap_pct:.1%})")
                         await notify_gap_skip(code, stock_name, analysis_price, current_price, gap_pct)
+                        continue
+                    if gap_pct > 0.03:
+                        logger.info(f"{code} 갭업 스킵: 기준가 {analysis_price:,} → 시초가 {current_price:,} ({gap_pct:.1%})")
+                        await notify_gap_up_skip(code, stock_name, analysis_price, current_price, gap_pct)
                         continue
 
                 # 2,000,000 × confidence 기준 수량 계산
@@ -526,6 +530,11 @@ class Orchestrator:
             await asyncio.sleep(60)
             if not self._trading_active:
                 break
+
+            # 09:30 이전은 장 시작 직후 변동성 구간 — 손절/익절 체크 스킵
+            now = datetime.now()
+            if now.hour == 9 and now.minute < 30:
+                continue
 
             async with AsyncSessionLocal() as session:
                 held_positions = await get_open_positions_by_market(session, "KR")
