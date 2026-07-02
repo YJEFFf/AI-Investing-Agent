@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # KRX 계정 (pykrx 로그인용)
+    krx_id: str = ""
+    krx_pw: str = ""
+
     # Database
     database_url: str = "mysql+aiomysql://root:password@localhost:3306/trading"
 

@@ -1,9 +1,8 @@
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
-
-import requests
-from bs4 import BeautifulSoup
+from datetime import date
 
 from data.fetcher import fetcher
 from strategy.ta_engine import TAEngine
@@ -14,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 _FINAL_COUNT = 40
 _MIN_OHLCV_BARS = 60
+_CANDIDATE_COUNT = 200  # KRX 거래대금 상위 N개를 TA 평가 대상으로 사용
 
 _EXCLUDE_KEYWORDS = (
     "ETF", "ETN", "TIGER", "KODEX", "KBSTAR", "HANARO",
@@ -22,50 +22,53 @@ _EXCLUDE_KEYWORDS = (
     "선물", "TR ", "레버리지",
 )
 
-_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
+def _fetch_krx_volume_rank(top_n: int = _CANDIDATE_COUNT) -> list[dict]:
+    """KRX 거래대금 상위 종목을 pykrx로 조회한다 (장전 분析용)."""
+    from pykrx import stock as krx
 
-def _fetch_naver_volume_rank(pages: int = 5) -> list[dict]:
-    """네이버 금융 거래대금 순위에서 KOSPI/KOSDAQ 개별주를 수집한다."""
-    stocks: list[tuple] = []
-    for sosok, market in [("0", "KOSPI"), ("1", "KOSDAQ")]:
-        for page in range(1, pages + 1):
-            try:
-                url = (
-                    f"https://finance.naver.com/sise/sise_quant.naver"
-                    f"?sosok={sosok}&page={page}"
-                )
-                resp = requests.get(url, headers=_HEADERS, timeout=5)
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for row in soup.select("table.type_2 tr"):
-                    cols = row.select("td")
-                    if len(cols) < 7:
-                        continue
-                    a = cols[1].select_one("a")
-                    if not a or "code=" not in a.get("href", ""):
-                        continue
-                    code = a["href"].split("code=")[-1].strip()
-                    name = a.text.strip()
-                    if not code.isdigit() or len(code) != 6:
-                        continue
-                    if any(kw in name for kw in _EXCLUDE_KEYWORDS):
-                        continue
-                    try:
-                        vol = int(cols[6].text.strip().replace(",", ""))
-                    except ValueError:
-                        vol = 0
-                    stocks.append((code, name, vol))
-            except Exception as e:
-                logger.warning(f"네이버 거래대금 순위 조회 실패 (sosok={sosok}, page={page}): {e}")
+    today = date.today().strftime("%Y%m%d")
 
-    stocks.sort(key=lambda x: x[2], reverse=True)
-    seen: set[str] = set()
+    # ETF 제외 목록
+    try:
+        etf_set = set(krx.get_etf_ticker_list(today))
+    except Exception:
+        etf_set = set()
+
+    # 전체 종목 거래대금 조회
+    try:
+        df = krx.get_market_ohlcv_by_ticker(today, market="ALL")
+    except Exception as e:
+        logger.warning(f"KRX 거래대금 조회 실패: {e}")
+        return []
+
+    df = df[df["거래대금"] > 0]
+    df = df[~df.index.isin(etf_set)]
+    df = df.sort_values("거래대금", ascending=False)
+
     result: list[dict] = []
-    for code, name, _ in stocks:
-        if code not in seen:
-            seen.add(code)
-            result.append({"code": code, "name": name})
+    for ticker in df.index:
+        if len(result) >= top_n:
+            break
+        try:
+            name = krx.get_market_ticker_name(ticker)
+        except Exception:
+            continue
+        if any(kw in name for kw in _EXCLUDE_KEYWORDS):
+            continue
+        result.append({"code": ticker, "name": name})
+
+    logger.info(f"KRX 거래대금 상위 {len(result)}개 종목 수집 완료")
     return result
+
+
+def _set_krx_env() -> None:
+    """pykrx 로그인용 환경변수를 settings에서 주입한다."""
+    from config.settings import settings
+    if settings.krx_id:
+        os.environ.setdefault("KRX_ID", settings.krx_id)
+    if settings.krx_pw:
+        os.environ.setdefault("KRX_PW", settings.krx_pw)
 
 
 @dataclass
@@ -85,14 +88,15 @@ class StockScreener:
         top_n: int = _FINAL_COUNT,
     ) -> list[dict]:
         """
-        네이버 금융 거래대금 순위에서 후보 종목을 수집하고
-        TA 점수로 필터링해 워치리스트를 반환한다.
+        KRX 거래대금 상위 종목을 수집하고 TA 점수로 필터링해 워치리스트를 반환한다.
         반환 형식: [{"code": "005930", "name": "삼성전자"}, ...]
         """
+        _set_krx_env()
+
         loop = asyncio.get_event_loop()
-        candidates = await loop.run_in_executor(None, _fetch_naver_volume_rank)
+        candidates = await loop.run_in_executor(None, _fetch_krx_volume_rank)
         if not candidates:
-            logger.warning("네이버 거래대금 순위 조회 실패 — 스크리닝 건너뜀")
+            logger.warning("KRX 거래대금 순위 조회 실패 — 스크리닝 건너뜀")
             return []
 
         logger.info(f"스크리너: {len(candidates)}개 후보 TA 점수 계산 중...")
