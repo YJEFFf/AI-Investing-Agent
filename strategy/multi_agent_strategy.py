@@ -111,16 +111,16 @@ class MultiAgentStrategy:
             # LLM 반환값 그대로 사용, 물리적 범위만 클램핑 (0~100% 벗어나는 경우만 방어)
             stop_pct = max(0.02, min(float(chart_op.metadata.get("stop_pct", 0.05)), 0.12))
             target_pct = max(0.03, min(float(chart_op.metadata.get("target_pct", 0.05)), 0.15))
-            # HIGH_VOLATILITY: ATR 기반 최소 스탑 보정 (노이즈 손절 방지)
+            # HIGH_VOLATILITY: ATR 기반 최소 스탑 보정 (노이즈 손절 방지) + target 동반 상향
             if regime == MarketRegime.HIGH_VOLATILITY:
                 atr_pct = ta_result.atr / current_price
                 atr_stop = min(round(atr_pct * 1.5, 4), 0.10)
                 if stop_pct < atr_stop:
                     logger.info(f"[{stock_code}] HIGH_VOL 스탑 확대: {stop_pct:.3f} → {atr_stop:.3f} (ATR%={atr_pct:.3%})")
                     stop_pct = atr_stop
-            # R:R 필터: target이 stop의 1.2배 미만이면 진입 불리 → 스킵
-            # HIGH_VOLATILITY는 ATR로 stop이 강제 확대되므로 R:R 역전이 구조적 — 필터 면제
-            if regime != MarketRegime.HIGH_VOLATILITY and target_pct < stop_pct * 1.2:
+                target_pct = max(target_pct, round(stop_pct * 1.3, 4))
+            # R:R 필터: target이 stop의 1.2배 미만이면 진입 불리 → 스킵 (모든 regime 적용)
+            if target_pct < stop_pct * 1.2:
                 logger.info(
                     f"[{stock_code}] R:R 불량 스킵: stop={stop_pct:.1%} / target={target_pct:.1%} "
                     f"(비율={target_pct/stop_pct:.2f} < 1.2)"
