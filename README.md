@@ -1,5 +1,7 @@
 # AIA — AI 자동 투자 에이전트
 
+> **프로젝트 상태:** 이 프로젝트는 실패한 초기 시도입니다. 이후 개선한 프로젝트를 [Stock-Investment-Multi-Agent](https://github.com/YJEFFf/Stock-Investment-Multi-Agent) 저장소에 새로 만들었으며, 현재 개발은 해당 저장소에서 진행 중입니다.
+
 한국투자증권(KIS) API 기반 국내 주식 스윙 매매(2~10일 보유) 자동화 시스템입니다.  
 Claude Vision이 일봉 차트 이미지를 직접 분석해 매수 적합성과 손절/목표 비율을 판단합니다.
 
