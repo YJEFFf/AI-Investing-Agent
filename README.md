@@ -167,13 +167,15 @@ stop_price 하향 돌파 → 전량 손절
 
 ## 설치 및 실행
 
-```bash
-# 의존성 설치
-pip install -e .
+Python 3.11 이상과 MySQL이 필요합니다. 저장소 루트에서 다음 명령을 실행하세요.
 
-# 환경변수 설정
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+
 cp .env.example .env
-# .env에 필수값 입력
+# .env에 KIS, Anthropic, MySQL 접속 정보를 입력
 
 # 모의매매 (KIS_ENV=vps)
 python scripts/run_paper.py
@@ -181,6 +183,8 @@ python scripts/run_paper.py
 # 백테스트
 python scripts/run_backtest.py
 ```
+
+`.env.example`은 비밀값이 비어 있는 공유용 설정 예시입니다. 실제 키가 들어 있는 `.env`, 인증 토큰, 로그, 시세 캐시는 Git에 포함하지 않습니다. `KIS_ENV=prod`는 실전 계좌를 사용하므로 실행 전에 계좌와 주문 설정을 확인하세요.
 
 ---
 
@@ -196,6 +200,9 @@ python scripts/run_backtest.py
 | `DATABASE_URL` | MySQL 연결 URL | ✅ |
 | `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 | — |
 | `TELEGRAM_CHAT_ID` | 텔레그램 채팅 ID | — |
+| `KRX_ID`, `KRX_PW` | KRX 계정 정보 | — |
+| `DAILY_LOSS_CAP` | 일일 손실 한도 비율 (기본값 `0.05`) | — |
+| `MAX_DRAWDOWN_PCT` | 최대 낙폭 비율 (기본값 `0.15`) | — |
 
 ---
 
